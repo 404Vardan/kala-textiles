@@ -1,5 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { lazy, Suspense } from 'react'
+import { AuthProvider } from './contexts/AuthContext'
+import ProtectedRoute from './components/auth/ProtectedRoute'
 
 // Eager load landing page (first paint)
 import LandingPage from './pages/LandingPage'
@@ -10,6 +12,7 @@ const ProductPage = lazy(() => import('./pages/ProductPage'))
 const InvoicePage = lazy(() => import('./pages/InvoicePage'))
 const OrderPage = lazy(() => import('./pages/OrderPage'))
 const StaffPage = lazy(() => import('./pages/StaffPage'))
+const LoginPage = lazy(() => import('./pages/LoginPage'))
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'))
 
 function LoadingFallback() {
@@ -26,19 +29,49 @@ function LoadingFallback() {
 function App() {
   return (
     <BrowserRouter>
-      <Suspense fallback={<LoadingFallback />}>
-        <Routes>
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/admin" element={<AdminPage />} />
-          <Route path="/p/:designNo" element={<ProductPage />} />
-          <Route path="/invoice/:invoiceNo" element={<InvoicePage />} />
-          <Route path="/order/:orderNo" element={<OrderPage />} />
-          <Route path="/staff" element={<StaffPage />} />
-          <Route path="*" element={<NotFoundPage />} />
-        </Routes>
-      </Suspense>
+      <AuthProvider>
+        <Suspense fallback={<LoadingFallback />}>
+          <Routes>
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/login" element={<LoginPage />} />
+
+            {/* Protected Business Operations */}
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute requiredRole="owner">
+                  <AdminPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/staff"
+              element={
+                <ProtectedRoute requiredRole="staff">
+                  <StaffPage />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Public Catalog & Inquiry Routes (both legacy and tenant-scoped) */}
+            <Route path="/p/:designNo" element={<ProductPage />} />
+            <Route path="/:slug/p/:designNo" element={<ProductPage />} />
+
+            {/* Public Invoice Routes */}
+            <Route path="/invoice/:invoiceNo" element={<InvoicePage />} />
+            <Route path="/:slug/invoice/:invoiceNo" element={<InvoicePage />} />
+
+            {/* Public Order Tracking Routes */}
+            <Route path="/order/:orderNo" element={<OrderPage />} />
+            <Route path="/:slug/order/:orderNo" element={<OrderPage />} />
+
+            <Route path="*" element={<NotFoundPage />} />
+          </Routes>
+        </Suspense>
+      </AuthProvider>
     </BrowserRouter>
   )
 }
 
 export default App
+

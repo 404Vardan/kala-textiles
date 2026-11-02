@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { fetchOrderByNo, fetchOrderItems } from '@/services/orders'
-import { fetchProduct } from '@/services/products'
+import { fetchPublicOrder } from '@/services/orders'
 import type { Order, OrderItem, Product } from '@/types'
 import { formatCurrency, formatDate } from '@/utils/formatters'
 import { downloadOrderPdf, printOrderPdf } from '@/utils/orderPdfGenerator'
@@ -13,9 +12,10 @@ interface OrderItemWithProduct extends OrderItem {
 }
 
 export default function OrderPage() {
-  const { orderNo } = useParams<{ orderNo: string }>()
+  const { orderNo, slug = 'rangoli' } = useParams<{ orderNo: string; slug?: string }>()
   const [order, setOrder] = useState<Order | null>(null)
   const [items, setItems] = useState<OrderItemWithProduct[]>([])
+  const [businessName, setBusinessName] = useState<string>('Rangoli Textiles')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [pdfGenerating, setPdfGenerating] = useState(false)
@@ -23,36 +23,64 @@ export default function OrderPage() {
   useEffect(() => {
     if (!orderNo) return
     loadOrder()
-  }, [orderNo])
+  }, [orderNo, slug])
 
   const loadOrder = async () => {
     try {
       setLoading(true)
-      const ord = await fetchOrderByNo(orderNo!)
-      setOrder(ord)
-      const orderItems = await fetchOrderItems(ord.id)
+      const pubOrder = await fetchPublicOrder(slug, orderNo!)
+      setBusinessName(pubOrder.business_name || 'Rangoli Textiles')
 
-      // Fetch product thumbnails for each item
-      const itemsWithProducts = await Promise.all(
-        orderItems.map(async (item) => {
-          if (item.design_no) {
-            try {
-              const product = await fetchProduct(item.design_no)
-              return { ...item, product }
-            } catch {
-              return item
-            }
-          }
-          return item
-        })
-      )
-      setItems(itemsWithProducts)
+      const adaptedOrder: Order = {
+        id: 0,
+        order_no: pubOrder.order_no,
+        party_name: pubOrder.party_name,
+        station: pubOrder.station,
+        agent: pubOrder.agent,
+        gst_number: pubOrder.gst_number,
+        order_date: pubOrder.order_date,
+        export_date: pubOrder.export_date,
+        brand: pubOrder.brand,
+        product_name: pubOrder.product_name,
+        notes: pubOrder.notes,
+        status: pubOrder.status || 'draft',
+        confirmed_at: pubOrder.confirmed_at,
+        total_amount: pubOrder.total_amount,
+        created_at: pubOrder.created_at,
+        updated_at: pubOrder.created_at,
+      }
+      setOrder(adaptedOrder)
+
+      const adaptedItems: OrderItemWithProduct[] = pubOrder.items.map(item => ({
+        id: item.id,
+        order_id: 0,
+        design_no: item.design_no,
+        rate: item.rate,
+        sets: item.sets,
+        pcs_per_set: item.pcs_per_set,
+        total_pcs: item.total_pcs,
+        line_total: item.line_total,
+        created_at: pubOrder.created_at,
+        product: {
+          id: 0,
+          design_no: item.design_no,
+          image_url: item.thumbnail,
+          brand: item.brand,
+          fabric: item.fabric,
+          rate: item.rate,
+          pcs_per_set: item.pcs_per_set,
+          created_at: pubOrder.created_at,
+          updated_at: pubOrder.created_at,
+        }
+      }))
+      setItems(adaptedItems)
     } catch {
       setError('Order not found')
     } finally {
       setLoading(false)
     }
   }
+
 
   const handlePrint = async () => {
     if (!order) return
@@ -154,7 +182,7 @@ export default function OrderPage() {
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-6 border-b border-slate-200 gap-4">
             <div>
               <div className="flex items-center gap-2.5">
-                <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900">RANGOLI TEXTILES</h1>
+                <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900">{businessName.toUpperCase()}</h1>
                 {order.status === 'confirmed' ? (
                   <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-xs font-semibold px-2.5 py-0.5 rounded-full border border-emerald-200">
                     <CheckCircle2 className="w-3.5 h-3.5" /> Confirmed

@@ -86,7 +86,14 @@ export async function intakeStock(
     })
 
     if (!error) return data
-  } catch {}
+    if (error && !error.message?.includes('not found') && !error.message?.includes('does not exist')) {
+      throw new Error(error.message)
+    }
+  } catch (err: any) {
+    if (err.message && !err.message.includes('not found') && !err.message.includes('does not exist')) {
+      throw err
+    }
+  }
 
   // 2. Client-side fallback if RPC is not yet migrated in Supabase
   const totalPcs = sets * (pcsPerSet || 1)
@@ -151,9 +158,11 @@ export async function transferStock(
     })
 
     if (!error) return data
-    if (error && error.message) throw new Error(error.message)
+    if (error && !error.message?.includes('not found') && !error.message?.includes('does not exist')) {
+      throw new Error(error.message)
+    }
   } catch (err: any) {
-    if (err.message && !err.message.includes('function transfer_stock_tx') && !err.message.includes('not found')) {
+    if (err.message && !err.message.includes('not found') && !err.message.includes('does not exist')) {
       throw err
     }
   }
@@ -227,12 +236,15 @@ export async function confirmOrderAndDeductStock(
       p_staff_name: staffName || 'Staff',
     })
     if (!error) return data
-    if (error && error.message) throw new Error(error.message)
+    if (error && !error.message?.includes('not found') && !error.message?.includes('does not exist')) {
+      throw new Error(error.message)
+    }
   } catch (err: any) {
-    if (err.message && !err.message.includes('function confirm_order_and_deduct_stock_tx') && !err.message.includes('not found')) {
+    if (err.message && !err.message.includes('not found') && !err.message.includes('does not exist')) {
       throw err
     }
   }
+
 
   // 2. Client fallback
   // Fetch order items

@@ -8,7 +8,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { fetchAdminSettings, updatePassword, updateWhatsappNumber, updateStaffPassword } from '@/services/adminSettings'
+import { fetchAdminSettings, updateWhatsappNumber, updateUserPassword } from '@/services/adminSettings'
 
 interface SettingsDialogProps {
   open: boolean
@@ -16,9 +16,8 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
-  const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
-  const [newStaffPassword, setNewStaffPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [whatsapp, setWhatsapp] = useState('')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
@@ -28,43 +27,26 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     e.preventDefault()
     setError('')
     setMessage('')
-    setLoading(true)
 
-    try {
-      const settings = await fetchAdminSettings()
-      if (currentPassword !== settings.password_hash && currentPassword !== 'Admin123') {
-        setError('Current admin password is incorrect')
-        return
-      }
-      await updatePassword(settings.id, newPassword)
-      setMessage('Admin password updated successfully')
-      setCurrentPassword('')
-      setNewPassword('')
-    } catch {
-      setError('Failed to update admin password')
-    } finally {
-      setLoading(false)
+    if (newPassword.length < 6) {
+      setError('Password must be at least 6 characters.')
+      return
     }
-  }
 
-  const handleChangeStaffPassword = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    setMessage('')
+    if (newPassword !== confirmPassword) {
+      setError('New passwords do not match.')
+      return
+    }
+
     setLoading(true)
 
     try {
-      const settings = await fetchAdminSettings()
-      if (currentPassword !== settings.password_hash) {
-        setError('Current admin password is required to change staff password')
-        return
-      }
-      await updateStaffPassword(settings.id, newStaffPassword)
-      setMessage('Staff password updated successfully')
-      setCurrentPassword('')
-      setNewStaffPassword('')
-    } catch {
-      setError('Failed to update staff password')
+      await updateUserPassword(newPassword)
+      setMessage('Account password updated successfully via Supabase Auth.')
+      setNewPassword('')
+      setConfirmPassword('')
+    } catch (err: any) {
+      setError(err?.message || 'Failed to update account password.')
     } finally {
       setLoading(false)
     }
@@ -78,7 +60,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     try {
       const settings = await fetchAdminSettings()
       await updateWhatsappNumber(settings.id, whatsapp)
-      setMessage('WhatsApp number updated')
+      setMessage('Business WhatsApp contact updated.')
     } catch {
       setError('Failed to update WhatsApp number')
     } finally {
@@ -90,65 +72,40 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Settings</DialogTitle>
+          <DialogTitle>Business & Account Settings</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-6">
-          {/* Change Password */}
+          {/* Change Auth Password */}
           <form onSubmit={handleChangePassword} className="space-y-3">
-            <h3 className="font-semibold text-sm text-gray-700">Change Admin Password</h3>
-            <div className="space-y-2">
-              <Label htmlFor="current-pw">Current Admin Password</Label>
-              <Input
-                id="current-pw"
-                type="password"
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                disabled={loading}
-              />
+            <div>
+              <h3 className="font-semibold text-sm text-gray-800">Update Account Password</h3>
+              <p className="text-xs text-gray-500">Update your Supabase Auth session credentials.</p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="new-pw">New Admin Password</Label>
+              <Label htmlFor="new-pw">New Password</Label>
               <Input
                 id="new-pw"
                 type="password"
+                placeholder="••••••••••••"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 disabled={loading}
               />
             </div>
-            <Button type="submit" size="sm" disabled={loading || !currentPassword || !newPassword}>
-              Update Admin Password
-            </Button>
-          </form>
-
-          <hr />
-
-          {/* Change Staff Password */}
-          <form onSubmit={handleChangeStaffPassword} className="space-y-3">
-            <h3 className="font-semibold text-sm text-gray-700">Change Staff Password</h3>
             <div className="space-y-2">
-              <Label htmlFor="current-admin-pw">Current Admin Password</Label>
+              <Label htmlFor="confirm-pw">Confirm Password</Label>
               <Input
-                id="current-admin-pw"
+                id="confirm-pw"
                 type="password"
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
+                placeholder="••••••••••••"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
                 disabled={loading}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="new-staff-pw">New Staff Password</Label>
-              <Input
-                id="new-staff-pw"
-                type="password"
-                value={newStaffPassword}
-                onChange={(e) => setNewStaffPassword(e.target.value)}
-                disabled={loading}
-              />
-            </div>
-            <Button type="submit" size="sm" disabled={loading || !currentPassword || !newStaffPassword}>
-              Update Staff Password
+            <Button type="submit" size="sm" disabled={loading || !newPassword || !confirmPassword}>
+              {loading ? 'Updating...' : 'Update Password'}
             </Button>
           </form>
 
@@ -156,7 +113,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
           {/* WhatsApp Number */}
           <div className="space-y-3">
-            <h3 className="font-semibold text-sm text-gray-700">WhatsApp Number</h3>
+            <div>
+              <h3 className="font-semibold text-sm text-gray-800">Business WhatsApp Contact</h3>
+              <p className="text-xs text-gray-500">Used for customer order confirmation and quick sharing.</p>
+            </div>
             <div className="flex gap-2">
               <Input
                 placeholder="+91..."
@@ -170,10 +130,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             </div>
           </div>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          {message && <p className="text-sm text-green-600">{message}</p>}
+          {error && <p className="text-sm text-red-600 bg-red-50 p-2 rounded">{error}</p>}
+          {message && <p className="text-sm text-green-600 bg-green-50 p-2 rounded">{message}</p>}
         </div>
       </DialogContent>
     </Dialog>
   )
 }
+

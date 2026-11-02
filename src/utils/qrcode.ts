@@ -1,14 +1,14 @@
 import QRCode from 'qrcode'
 import type { Product } from '@/types'
 
-export function getPermanentProductUrl(designNo: string, customDomain?: string): string {
+export function getPermanentProductUrl(designNo: string, slug: string = 'rangoli', customDomain?: string): string {
   const domain = (
     customDomain ||
     import.meta.env.VITE_PUBLISHED_DOMAIN ||
     (typeof window !== 'undefined' ? window.location.origin : 'https://rangolitextiles.in')
   ).replace(/\/$/, '')
 
-  return `${domain}/p/${encodeURIComponent(designNo.trim())}`
+  return `${domain}/${slug}/p/${encodeURIComponent(designNo.trim())}`
 }
 
 export async function generateQRCode(text: string): Promise<string> {
@@ -29,19 +29,20 @@ export async function generateQRCode(text: string): Promise<string> {
   }
 }
 
-export async function generateQRCodeForProduct(designNo: string, customDomain?: string): Promise<string> {
-  const url = getPermanentProductUrl(designNo, customDomain)
+export async function generateQRCodeForProduct(designNo: string, slug: string = 'rangoli', customDomain?: string): Promise<string> {
+  const url = getPermanentProductUrl(designNo, slug, customDomain)
   return generateQRCode(url)
 }
 
-export async function generateQRCodeForInvoice(invoiceNo: string, customDomain?: string): Promise<string> {
+export async function generateQRCodeForInvoice(invoiceNo: string, slug: string = 'rangoli', customDomain?: string): Promise<string> {
   const domain = (
     customDomain ||
     import.meta.env.VITE_PUBLISHED_DOMAIN ||
     (typeof window !== 'undefined' ? window.location.origin : 'https://rangolitextiles.in')
   ).replace(/\/$/, '')
-  return generateQRCode(`${domain}/invoice/${encodeURIComponent(invoiceNo)}`)
+  return generateQRCode(`${domain}/${slug}/invoice/${encodeURIComponent(invoiceNo)}`)
 }
+
 
 export function downloadQRCode(dataUrl: string, filename: string) {
   const link = document.createElement('a')

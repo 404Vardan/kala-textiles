@@ -8,10 +8,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { StaffPasswordModal } from '@/components/admin/StaffPasswordModal'
-import { PasswordModal } from '@/components/admin/PasswordModal'
-import { isAdminAuthenticated, setAdminAccess } from '@/hooks/useAdminAuth'
-import { isStaffAuthenticated, setStaffAccess } from '@/hooks/useStaffAuth'
 import { fetchProducts } from '@/services/products'
 import type { Product } from '@/types'
 import { useQRScanner } from '@/hooks/useQRScanner'
@@ -19,8 +15,6 @@ import { QrCode, ShoppingCart, Shield, Search, X, Camera, Zap } from 'lucide-rea
 
 export default function LandingPage() {
   const navigate = useNavigate()
-  const [showPasswordModal, setShowPasswordModal] = useState(false)
-  const [showStaffPasswordModal, setShowStaffPasswordModal] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -66,31 +60,11 @@ export default function LandingPage() {
   }
 
   const handleCreateOrder = () => {
-    if (isStaffAuthenticated() || isAdminAuthenticated()) {
-      navigate('/staff')
-    } else {
-      setShowStaffPasswordModal(true)
-    }
+    navigate('/staff')
   }
 
   const handleAdminAccess = () => {
-    if (isAdminAuthenticated()) {
-      navigate('/admin')
-    } else {
-      setShowPasswordModal(true)
-    }
-  }
-
-  const handlePasswordSuccess = () => {
-    setAdminAccess()
-    setShowPasswordModal(false)
     navigate('/admin')
-  }
-
-  const handleStaffPasswordSuccess = () => {
-    setStaffAccess()
-    setShowStaffPasswordModal(false)
-    navigate('/staff')
   }
 
   const handleSelectDesign = (designNo: string) => {
@@ -235,23 +209,6 @@ export default function LandingPage() {
           </Button>
         </DialogContent>
       </Dialog>
-
-      {/* Password Modal */}
-      {showPasswordModal && (
-        <PasswordModal
-          isOpen={showPasswordModal}
-          onSuccess={handlePasswordSuccess}
-        />
-      )}
-
-      {/* Staff Password Modal */}
-      {showStaffPasswordModal && (
-        <StaffPasswordModal
-          isOpen={showStaffPasswordModal}
-          onSuccess={handleStaffPasswordSuccess}
-          onClose={() => setShowStaffPasswordModal(false)}
-        />
-      )}
     </div>
   )
 }

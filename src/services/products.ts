@@ -60,6 +60,44 @@ export async function fetchProductById(id: number): Promise<Product> {
   return data as Product
 }
 
+export async function fetchPublicProduct(slug: string = 'rangoli', designNo: string): Promise<import('@/types').PublicProduct> {
+  try {
+    const { data, error } = await supabase.rpc('get_public_product', {
+      p_slug: slug,
+      p_design_no: designNo,
+    })
+
+    if (!error && data) {
+      return data as import('@/types').PublicProduct
+    }
+  } catch (err) {
+    console.warn('get_public_product RPC call failed, falling back to direct query:', err)
+  }
+
+  // Graceful fallback for environments before migration 005
+  const prod = await fetchProduct(designNo)
+  const mediaList = await fetchProductMedia(prod.id)
+
+  return {
+    design_no: prod.design_no,
+    brand: prod.brand,
+    collection_name: prod.collection_name,
+    fabric: prod.fabric,
+    rate: prod.rate,
+    pcs_per_set: prod.pcs_per_set,
+    description: prod.description,
+    image_url: prod.image_url,
+    business_name: 'Rangoli Textiles',
+    business_slug: slug,
+    media: mediaList.map(m => ({
+      id: m.id,
+      media_url: m.media_url,
+      media_type: m.media_type,
+      sort_order: m.sort_order,
+    })),
+  }
+}
+
 export async function checkDesignNoAvailable(designNo: string, excludeId?: number): Promise<boolean> {
   let query = supabase
     .from('products')

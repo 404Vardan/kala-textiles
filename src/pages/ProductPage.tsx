@@ -3,16 +3,15 @@ import { useParams, Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { fetchProduct, fetchProductMedia } from '@/services/products'
-import { createInquiry } from '@/services/inquiries'
-import type { Product, ProductMedia } from '@/types'
+import { fetchPublicProduct } from '@/services/products'
+import { createPublicInquiry } from '@/services/inquiries'
+import type { PublicProduct } from '@/types'
 import { formatCurrency } from '@/utils/formatters'
 import { ChevronLeft, ChevronRight, Send, ArrowLeft, Package } from 'lucide-react'
 
 export default function ProductPage() {
-  const { designNo } = useParams<{ designNo: string }>()
-  const [product, setProduct] = useState<Product | null>(null)
-  const [media, setMedia] = useState<ProductMedia[]>([])
+  const { designNo, slug = 'rangoli' } = useParams<{ designNo: string; slug?: string }>()
+  const [product, setProduct] = useState<PublicProduct | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [currentSlide, setCurrentSlide] = useState(0)
@@ -27,15 +26,13 @@ export default function ProductPage() {
   useEffect(() => {
     if (!designNo) return
     loadProduct()
-  }, [designNo])
+  }, [designNo, slug])
 
   const loadProduct = async () => {
     try {
       setLoading(true)
-      const prod = await fetchProduct(designNo!)
+      const prod = await fetchPublicProduct(slug, designNo!)
       setProduct(prod)
-      const mediaList = await fetchProductMedia(prod.id)
-      setMedia(mediaList)
     } catch {
       setError('Product not found')
     } finally {
@@ -48,12 +45,12 @@ export default function ProductPage() {
     setSubmitting(true)
 
     try {
-      await createInquiry({
-        customer_name: name,
+      await createPublicInquiry({
+        slug,
+        customerName: name,
         phone,
-        design_no: designNo,
+        designNo,
         message: message || undefined,
-        status: 'pending',
       })
       setSubmitted(true)
       setName('')
@@ -65,6 +62,9 @@ export default function ProductPage() {
       setSubmitting(false)
     }
   }
+
+  const media = product?.media || []
+
 
   const nextSlide = () => setCurrentSlide((prev) => (prev + 1) % media.length)
   const prevSlide = () => setCurrentSlide((prev) => (prev - 1 + media.length) % media.length)

@@ -1,36 +1,56 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { fetchInvoice, fetchInvoiceItems } from '@/services/invoices'
+import { fetchPublicInvoice } from '@/services/invoices'
 import type { Invoice, InvoiceItem } from '@/types'
 import { formatCurrency, formatDate } from '@/utils/formatters'
 import { ArrowLeft, FileText, Printer } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 export default function InvoicePage() {
-  const { invoiceNo } = useParams<{ invoiceNo: string }>()
+  const { invoiceNo, slug = 'rangoli' } = useParams<{ invoiceNo: string; slug?: string }>()
   const [invoice, setInvoice] = useState<Invoice | null>(null)
   const [items, setItems] = useState<InvoiceItem[]>([])
+  const [businessName, setBusinessName] = useState<string>('Rangoli Textiles')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
     if (!invoiceNo) return
     loadInvoice()
-  }, [invoiceNo])
+  }, [invoiceNo, slug])
 
   const loadInvoice = async () => {
     try {
       setLoading(true)
-      const inv = await fetchInvoice(invoiceNo!)
-      setInvoice(inv)
-      const invItems = await fetchInvoiceItems(inv.id)
-      setItems(invItems)
+      const pubInv = await fetchPublicInvoice(slug, invoiceNo!)
+      setBusinessName(pubInv.business_name || 'Rangoli Textiles')
+      setInvoice({
+        id: 0,
+        invoice_no: pubInv.invoice_no,
+        party_name: pubInv.party_name,
+        export_date: pubInv.export_date,
+        total_amount: pubInv.total_amount,
+        created_at: pubInv.created_at,
+        updated_at: pubInv.created_at,
+      })
+      setItems(pubInv.items.map(it => ({
+        id: it.id,
+        invoice_id: 0,
+        design_no: it.design_no,
+        rate: it.rate,
+        sets: it.sets,
+        pcs_per_set: it.pcs_per_set,
+        total_pcs: it.total_pcs,
+        line_total: it.line_total,
+        created_at: pubInv.created_at,
+      })))
     } catch {
       setError('Invoice not found')
     } finally {
       setLoading(false)
     }
   }
+
 
   if (loading) {
     return (
@@ -77,7 +97,7 @@ export default function InvoicePage() {
             </div>
             <div className="text-right">
               <h2 className="text-xl font-bold bg-gradient-to-r from-orange-600 to-rose-600 bg-clip-text text-transparent">
-                Rangoli Textiles
+                {businessName}
               </h2>
               {invoice.qr_code_url && (
                 <img src={invoice.qr_code_url} alt="QR" className="w-20 h-20 ml-auto mt-2" />

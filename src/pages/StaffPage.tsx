@@ -2,31 +2,19 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { StaffPasswordModal } from '@/components/admin/StaffPasswordModal'
 import { useStaffAuth } from '@/hooks/useStaffAuth'
 import OrderTab from '@/components/admin/OrderTab'
 import ShopScanTab from '@/components/admin/ShopScanTab'
 import { LogOut, ShoppingCart, ScanLine, Smartphone } from 'lucide-react'
 
 export default function StaffPage() {
-  const { isAuthenticated, login, logout } = useStaffAuth()
-  const [showPassword, setShowPassword] = useState(!isAuthenticated)
+  const { logout } = useStaffAuth()
   const [activeTab, setActiveTab] = useState('orders')
   const navigate = useNavigate()
 
-  const handlePasswordSuccess = () => {
-    login()
-    setShowPassword(false)
-  }
-
-  const handleLogout = () => {
-    logout()
-    setShowPassword(true)
-    navigate('/')
-  }
-
-  if (showPassword) {
-    return <StaffPasswordModal isOpen={true} onSuccess={handlePasswordSuccess} onClose={() => navigate('/')} />
+  const handleLogout = async () => {
+    await logout()
+    navigate('/login')
   }
 
   return (

@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { PasswordModal } from '@/components/admin/PasswordModal'
 import { SettingsDialog } from '@/components/admin/SettingsDialog'
 import { useAdminAuth } from '@/hooks/useAdminAuth'
 import DashboardTab from '@/components/admin/DashboardTab'
@@ -42,8 +41,7 @@ const TAB_CONFIG = [
 ]
 
 export default function AdminPage() {
-  const { isAuthenticated, login, logout } = useAdminAuth()
-  const [showPassword, setShowPassword] = useState(!isAuthenticated)
+  const { logout } = useAdminAuth()
   const [showSettings, setShowSettings] = useState(false)
   const [activeTab, setActiveTab] = useState('dashboard')
   const navigate = useNavigate()
@@ -62,19 +60,9 @@ export default function AdminPage() {
     setSearchParams({ tab: val })
   }
 
-  const handlePasswordSuccess = () => {
-    login()
-    setShowPassword(false)
-  }
-
-  const handleLogout = () => {
-    logout()
-    setShowPassword(true)
-    navigate('/')
-  }
-
-  if (showPassword) {
-    return <PasswordModal isOpen={true} onSuccess={handlePasswordSuccess} />
+  const handleLogout = async () => {
+    await logout()
+    navigate('/login')
   }
 
   return (

@@ -1,6 +1,27 @@
+// Business & Multi-Tenancy types
+export type UserRole = 'owner' | 'staff'
+
+export interface Business {
+  id: number
+  name: string
+  slug: string
+  settings?: Record<string, any>
+  created_at: string
+  updated_at: string
+}
+
+export interface Membership {
+  user_id: string
+  business_id: number
+  role: UserRole
+  created_at: string
+  business?: Business
+}
+
 // Product types
 export interface Product {
   id: number
+  business_id?: number
   design_no: string
   brand?: string
   collection_name?: string
@@ -19,6 +40,7 @@ export interface Product {
 
 export interface ProductMedia {
   id: number
+  business_id?: number
   product_id: number
   media_url: string
   media_type: 'image' | 'video'
@@ -26,11 +48,32 @@ export interface ProductMedia {
   created_at: string
 }
 
+// Public Product DTO returned by get_public_product RPC
+export interface PublicProduct {
+  design_no: string
+  brand?: string
+  collection_name?: string
+  fabric?: string
+  rate?: number
+  pcs_per_set?: number
+  description?: string
+  image_url?: string
+  business_name: string
+  business_slug: string
+  media: Array<{
+    id: number
+    media_url: string
+    media_type: 'image' | 'video'
+    sort_order: number
+  }>
+}
+
 // Order types
 export type OrderStatus = 'draft' | 'confirmed' | 'cancelled'
 
 export interface Order {
   id: number
+  business_id?: number
   order_no: string
   party_name: string
   station?: string | null
@@ -51,6 +94,7 @@ export interface Order {
 
 export interface OrderItem {
   id: number
+  business_id?: number
   order_id: number
   product_id?: number
   design_no?: string
@@ -62,9 +106,42 @@ export interface OrderItem {
   created_at: string
 }
 
+// Public Order DTO returned by get_public_order RPC
+export interface PublicOrder {
+  order_no: string
+  party_name: string
+  station?: string | null
+  agent?: string | null
+  gst_number?: string | null
+  order_date?: string | null
+  export_date?: string | null
+  brand?: string | null
+  product_name?: string | null
+  notes?: string | null
+  status?: OrderStatus
+  total_amount: number
+  created_at: string
+  confirmed_at?: string | null
+  business_name: string
+  business_slug: string
+  items: Array<{
+    id: number
+    design_no: string
+    rate: number
+    sets: number
+    pcs_per_set: number
+    total_pcs: number
+    line_total: number
+    thumbnail?: string
+    brand?: string
+    fabric?: string
+  }>
+}
+
 // Invoice types (legacy support)
 export interface Invoice {
   id: number
+  business_id?: number
   invoice_no: string
   party_name: string
   export_date?: string | null
@@ -76,6 +153,7 @@ export interface Invoice {
 
 export interface InvoiceItem {
   id: number
+  business_id?: number
   invoice_id: number
   design_no?: string
   rate?: number
@@ -86,9 +164,30 @@ export interface InvoiceItem {
   created_at: string
 }
 
+// Public Invoice DTO
+export interface PublicInvoice {
+  invoice_no: string
+  party_name: string
+  export_date?: string | null
+  total_amount: number
+  created_at: string
+  business_name: string
+  business_slug: string
+  items: Array<{
+    id: number
+    design_no: string
+    rate: number
+    sets: number
+    pcs_per_set: number
+    total_pcs: number
+    line_total: number
+  }>
+}
+
 // Inventory types
 export interface InventoryLocation {
   id: number
+  business_id?: number
   name: string
   description?: string
   created_at: string
@@ -96,6 +195,7 @@ export interface InventoryLocation {
 
 export interface InventoryStock {
   id: number
+  business_id?: number
   product_id: number
   location_id: number
   sets: number
@@ -107,6 +207,7 @@ export type MovementType = 'INTAKE' | 'TRANSFER' | 'DISPATCH' | 'ADJUSTMENT'
 
 export interface StockMovement {
   id: number
+  business_id?: number
   product_id: number
   from_location_id?: number
   to_location_id?: number
@@ -122,6 +223,7 @@ export interface StockMovement {
 // Party & Agent Directory Types
 export interface Party {
   id: number
+  business_id?: number
   name: string
   station?: string | null
   gst_number?: string | null
@@ -133,6 +235,7 @@ export interface Party {
 
 export interface Agent {
   id: number
+  business_id?: number
   name: string
   phone?: string | null
   station?: string | null
@@ -157,6 +260,7 @@ export interface DashboardStats {
 // Inquiry types
 export interface Inquiry {
   id: number
+  business_id?: number
   customer_name: string
   phone: string
   design_no?: string
@@ -171,8 +275,7 @@ export interface Inquiry {
 // Admin settings
 export interface AdminSettings {
   id: number
-  password_hash: string
-  staff_password?: string
+  business_id?: number
   whatsapp_number?: string
   created_at: string
   updated_at: string
