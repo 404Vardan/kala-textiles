@@ -1,11 +1,25 @@
 import supabase from './supabase'
-import type { Order, OrderItem } from '@/types'
+import type { Order, OrderItem, OrderStatus } from '@/types'
 
 // Orders CRUD
-export async function fetchOrders(limit = 100) {
-  const { data, error } = await supabase
-    .from('orders')
-    .select('*')
+export async function fetchOrders(options?: {
+  limit?: number
+  status?: OrderStatus | 'all'
+  search?: string
+}): Promise<Order[]> {
+  const limit = options?.limit || 100
+  let query = supabase.from('orders').select('*')
+
+  if (options?.status && options.status !== 'all') {
+    query = query.eq('status', options.status)
+  }
+
+  if (options?.search && options.search.trim()) {
+    const s = options.search.trim()
+    query = query.or(`order_no.ilike.%${s}%,party_name.ilike.%${s}%,station.ilike.%${s}%,agent.ilike.%${s}%,gst_number.ilike.%${s}%`)
+  }
+
+  const { data, error } = await query
     .order('created_at', { ascending: false })
     .limit(limit)
 
@@ -13,7 +27,7 @@ export async function fetchOrders(limit = 100) {
   return data as Order[]
 }
 
-export async function fetchOrder(id: number) {
+export async function fetchOrder(id: number): Promise<Order> {
   const { data, error } = await supabase
     .from('orders')
     .select('*')
@@ -24,7 +38,7 @@ export async function fetchOrder(id: number) {
   return data as Order
 }
 
-export async function fetchOrderByNo(orderNo: string) {
+export async function fetchOrderByNo(orderNo: string): Promise<Order> {
   const { data, error } = await supabase
     .from('orders')
     .select('*')
@@ -36,25 +50,37 @@ export async function fetchOrderByNo(orderNo: string) {
 }
 
 export async function generateOrderNo(): Promise<string> {
-  const { data, error } = await supabase.rpc('generate_order_no')
-  if (error) throw error
-  return data as string
+  try {
+    const { data, error } = await supabase.rpc('generate_order_no')
+    if (!error && data) return data as string
+  } catch {}
+
+  // Fallback client generation
+  const year = new Date().getFullYear()
+  const randomSeq = Math.floor(1000 + Math.random() * 9000)
+  return `RNG-${year}-${randomSeq}`
 }
 
-export async function createOrder(order: Omit<Order, 'id' | 'created_at' | 'updated_at'>) {
+export async function createOrder(order: Omit<Order, 'id' | 'created_at' | 'updated_at'>): Promise<Order> {
   const { data, error } = await supabase
     .from('orders')
-    .insert([order])
+    .insert([{
+      ...order,
+      status: order.status || 'draft',
+    }])
     .select()
 
   if (error) throw error
   return data[0] as Order
 }
 
-export async function updateOrder(id: number, updates: Partial<Order>) {
+export async function updateOrder(id: number, updates: Partial<Order>): Promise<Order> {
   const { data, error } = await supabase
     .from('orders')
-    .update(updates)
+    .update({
+      ...updates,
+      updated_at: new Date().toISOString(),
+    })
     .eq('id', id)
     .select()
 
@@ -62,7 +88,11 @@ export async function updateOrder(id: number, updates: Partial<Order>) {
   return data[0] as Order
 }
 
-export async function deleteOrder(id: number) {
+export async function updateOrderStatus(id: number, status: OrderStatus): Promise<Order> {
+  return updateOrder(id, { status })
+}
+
+export async function deleteOrder(id: number): Promise<void> {
   const { error } = await supabase
     .from('orders')
     .delete()
@@ -72,18 +102,18 @@ export async function deleteOrder(id: number) {
 }
 
 // Order Items CRUD
-export async function fetchOrderItems(orderId: number) {
+export async function fetchOrderItems(orderId: number): Promise<OrderItem[]> {
   const { data, error } = await supabase
     .from('order_items')
     .select('*')
     .eq('order_id', orderId)
-    .order('created_at', { ascending: true })
+    .order('id', { ascending: true })
 
   if (error) throw error
   return data as OrderItem[]
 }
 
-export async function createOrderItem(item: Omit<OrderItem, 'id' | 'created_at'>) {
+export async function createOrderItem(item: Omit<OrderItem, 'id' | 'created_at'>): Promise<OrderItem> {
   const { data, error } = await supabase
     .from('order_items')
     .insert([item])
@@ -93,7 +123,7 @@ export async function createOrderItem(item: Omit<OrderItem, 'id' | 'created_at'>
   return data[0] as OrderItem
 }
 
-export async function createOrderItemBatch(items: Array<Omit<OrderItem, 'id' | 'created_at'>>) {
+export async function createOrderItemBatch(items: Array<Omit<OrderItem, 'id' | 'created_at'>>): Promise<OrderItem[]> {
   const { data, error } = await supabase
     .from('order_items')
     .insert(items)
@@ -103,7 +133,7 @@ export async function createOrderItemBatch(items: Array<Omit<OrderItem, 'id' | '
   return data as OrderItem[]
 }
 
-export async function deleteOrderItem(id: number) {
+export async function deleteOrderItem(id: number): Promise<void> {
   const { error } = await supabase
     .from('order_items')
     .delete()
@@ -112,7 +142,7 @@ export async function deleteOrderItem(id: number) {
   if (error) throw error
 }
 
-export async function deleteOrderItemsByOrderId(orderId: number) {
+export async function deleteOrderItemsByOrderId(orderId: number): Promise<void> {
   const { error } = await supabase
     .from('order_items')
     .delete()
@@ -125,7 +155,7 @@ export async function deleteOrderItemsByOrderId(orderId: number) {
 export async function createOrderWithItems(
   orderData: Omit<Order, 'id' | 'created_at' | 'updated_at'>,
   items: Array<Omit<OrderItem, 'id' | 'created_at' | 'order_id'>>
-) {
+): Promise<Order> {
   // Create order first
   const order = await createOrder(orderData)
 
@@ -139,4 +169,40 @@ export async function createOrderWithItems(
   }
 
   return order
+}
+
+// Duplicate an existing order
+export async function duplicateOrder(sourceOrderId: number): Promise<Order> {
+  const sourceOrder = await fetchOrder(sourceOrderId)
+  const sourceItems = await fetchOrderItems(sourceOrderId)
+
+  const newOrderNo = await generateOrderNo()
+
+  const duplicated = await createOrderWithItems(
+    {
+      order_no: newOrderNo,
+      party_name: sourceOrder.party_name,
+      station: sourceOrder.station,
+      agent: sourceOrder.agent,
+      gst_number: sourceOrder.gst_number,
+      order_date: new Date().toISOString().split('T')[0],
+      export_date: sourceOrder.export_date,
+      brand: sourceOrder.brand,
+      product_name: sourceOrder.product_name,
+      notes: sourceOrder.notes ? `Duplicated from ${sourceOrder.order_no}: ${sourceOrder.notes}` : `Duplicated from ${sourceOrder.order_no}`,
+      status: 'draft',
+      total_amount: sourceOrder.total_amount,
+    },
+    sourceItems.map(item => ({
+      product_id: item.product_id,
+      design_no: item.design_no,
+      rate: item.rate,
+      sets: item.sets,
+      pcs_per_set: item.pcs_per_set,
+      total_pcs: item.total_pcs,
+      line_total: item.line_total,
+    }))
+  )
+
+  return duplicated
 }

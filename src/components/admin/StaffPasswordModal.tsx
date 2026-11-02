@@ -9,7 +9,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import supabase from '@/services/supabase'
+import { verifyStaffPassword } from '@/hooks/useStaffAuth'
 
 interface StaffPasswordModalProps {
   isOpen: boolean
@@ -28,27 +28,15 @@ export function StaffPasswordModal({ isOpen, onSuccess, onClose }: StaffPassword
     setLoading(true)
 
     try {
-      const { data: adminData, error: fetchError } = await supabase
-        .from('admin_settings')
-        .select('staff_password')
-        .limit(1)
-        .single()
-
-      if (fetchError) {
-        setError('Failed to verify staff credentials')
-        return
-      }
-
-      const validPassword = adminData.staff_password || 'staff123'
-      if (password === validPassword) {
+      const isValid = await verifyStaffPassword(password.trim())
+      if (isValid) {
         onSuccess()
         setPassword('')
       } else {
-        setError('Incorrect password')
+        setError('Incorrect staff access code')
       }
-    } catch (err) {
-      setError('An error occurred. Please try again.')
-      console.error(err)
+    } catch (err: any) {
+      setError(err?.message || 'Verification failed. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -56,21 +44,21 @@ export function StaffPasswordModal({ isOpen, onSuccess, onClose }: StaffPassword
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[400px]">
         <DialogHeader>
-          <DialogTitle>Staff Login</DialogTitle>
+          <DialogTitle className="text-xl font-bold">Staff Access</DialogTitle>
           <DialogDescription>
-            Enter the staff password to create an order
+            Enter staff passcode to access order entry & barcode scanning
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4 py-4">
+        <form onSubmit={handleSubmit} className="space-y-4 py-3">
           <div className="space-y-2">
-            <Label htmlFor="staff-password">Password</Label>
+            <Label htmlFor="staff-password">Passcode</Label>
             <Input
               id="staff-password"
               type="password"
-              placeholder="Enter staff password"
+              placeholder="Enter staff passcode"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={loading}
@@ -79,15 +67,15 @@ export function StaffPasswordModal({ isOpen, onSuccess, onClose }: StaffPassword
           </div>
 
           {error && (
-            <p className="text-sm text-red-600">{error}</p>
+            <p className="text-sm font-medium text-red-600 bg-red-50 p-2 rounded border border-red-200">{error}</p>
           )}
 
           <Button
             type="submit"
-            className="w-full bg-orange-600 hover:bg-orange-700"
+            className="w-full bg-orange-600 hover:bg-orange-700 text-white font-medium"
             disabled={loading || !password.trim()}
           >
-            {loading ? 'Verifying...' : 'Login'}
+            {loading ? 'Verifying...' : 'Continue to Staff Terminal'}
           </Button>
         </form>
       </DialogContent>

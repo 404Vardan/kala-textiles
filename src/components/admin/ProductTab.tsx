@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -17,24 +17,63 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { fetchProducts, deleteProduct, searchProducts, createProduct, updateProduct } from '@/services/products'
-import { fetchProductMedia, createProductMedia } from '@/services/products'
+import {
+  fetchProducts,
+  deleteProduct,
+  createProduct,
+  updateProduct,
+  toggleProductActive,
+  checkDesignNoAvailable,
+  createProductMedia,
+  fetchProductMedia,
+} from '@/services/products'
 import { uploadProductMedia, deleteMediaFile, getPathFromUrl } from '@/services/storage'
 import MediaManager from '@/components/admin/MediaManager'
 import type { Product } from '@/types'
 import { formatCurrency } from '@/utils/formatters'
-import { generateQRCodeForProduct } from '@/utils/qrcode'
-import { Trash2, Edit2, Printer, Download, Plus, Image, Upload } from 'lucide-react'
+import { generateQRCodeForProduct, downloadQRCode, printProductLabel } from '@/utils/qrcode'
+import {
+  Trash2,
+  Edit2,
+  Printer,
+  Download,
+  Plus,
+  Image as ImageIcon,
+  Search,
+  CheckCircle2,
+  XCircle,
+  QrCode,
+  Film,
+  Star,
+  Eye,
+  Filter,
+} from 'lucide-react'
+
+interface StagedMediaFile {
+  id: string
+  file: File
+  preview: string
+  type: 'image' | 'video'
+  isPrimary: boolean
+}
 
 export default function ProductTab() {
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
+  const [brandFilter, setBrandFilter] = useState('all')
+  const [collectionFilter, setCollectionFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'archived'>('all')
+
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [showMediaDialog, setShowMediaDialog] = useState(false)
   const [mediaProduct, setMediaProduct] = useState<Product | null>(null)
+
+  // QR Modal preview
+  const [previewQrProduct, setPreviewQrProduct] = useState<Product | null>(null)
+  const [previewQrDataUrl, setPreviewQrDataUrl] = useState<string | null>(null)
 
   // Form fields
   const [formDesignNo, setFormDesignNo] = useState('')
@@ -44,9 +83,13 @@ export default function ProductTab() {
   const [formRate, setFormRate] = useState('')
   const [formPcsPerSet, setFormPcsPerSet] = useState('1')
   const [formDescription, setFormDescription] = useState('')
+  const [formIsActive, setFormIsActive] = useState(true)
   const [formSaving, setFormSaving] = useState(false)
-  const [formImage, setFormImage] = useState<File | null>(null)
-  const [formImagePreview, setFormImagePreview] = useState<string | null>(null)
+  const [formError, setFormError] = useState('')
+
+  // Staged files for new or edited products
+  const [stagedFiles, setStagedFiles] = useState<StagedMediaFile[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     loadProducts()
@@ -55,7 +98,7 @@ export default function ProductTab() {
   const loadProducts = async () => {
     try {
       setLoading(true)
-      const data = await fetchProducts()
+      const data = await fetchProducts({ limit: 300 })
       setProducts(data)
     } catch (error) {
       console.error('Error loading products:', error)
@@ -64,24 +107,30 @@ export default function ProductTab() {
     }
   }
 
-  const handleSearch = async (query: string) => {
-    setSearchQuery(query)
-    if (query.trim()) {
-      try {
-        const data = await searchProducts(query)
-        setProducts(data)
-      } catch (error) {
-        console.error('Error searching products:', error)
-      }
-    } else {
-      loadProducts()
+  // Derive unique brands and collections for filter selectors
+  const uniqueBrands = Array.from(new Set(products.map(p => p.brand).filter(Boolean))) as string[]
+  const uniqueCollections = Array.from(new Set(products.map(p => p.collection_name).filter(Boolean))) as string[]
+
+  const filteredProducts = products.filter(p => {
+    if (statusFilter === 'active' && p.is_active === false) return false
+    if (statusFilter === 'archived' && p.is_active !== false) return false
+    if (brandFilter !== 'all' && p.brand !== brandFilter) return false
+    if (collectionFilter !== 'all' && p.collection_name !== collectionFilter) return false
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase()
+      return (
+        p.design_no.toLowerCase().includes(q) ||
+        (p.brand && p.brand.toLowerCase().includes(q)) ||
+        (p.collection_name && p.collection_name.toLowerCase().includes(q)) ||
+        (p.fabric && p.fabric.toLowerCase().includes(q))
+      )
     }
-  }
+    return true
+  })
 
   const handleDelete = async (id: number) => {
     try {
-      // Delete associated media files from storage first
-      const productMedia = await fetchProductMedia(id)
+      const productMedia = await fetchProductMedia(id).catch(() => [])
       for (const m of productMedia) {
         const path = getPathFromUrl(m.media_url)
         await deleteMediaFile(path).catch(() => {})
@@ -89,8 +138,17 @@ export default function ProductTab() {
       await deleteProduct(id)
       setProducts(products.filter(p => p.id !== id))
       setDeleteConfirm(null)
-    } catch (error) {
-      console.error('Error deleting product:', error)
+    } catch (error: any) {
+      alert(`Error deleting product: ${error?.message || 'Unknown error'}`)
+    }
+  }
+
+  const handleToggleStatus = async (product: Product) => {
+    try {
+      const updated = await toggleProductActive(product.id, product.is_active ?? true)
+      setProducts(products.map(p => (p.id === updated.id ? updated : p)))
+    } catch (err: any) {
+      alert(`Could not toggle status: ${err?.message || 'Error'}`)
     }
   }
 
@@ -103,8 +161,9 @@ export default function ProductTab() {
     setFormRate('')
     setFormPcsPerSet('1')
     setFormDescription('')
-    setFormImage(null)
-    setFormImagePreview(null)
+    setFormIsActive(true)
+    setStagedFiles([])
+    setFormError('')
     setShowForm(true)
   }
 
@@ -117,339 +176,632 @@ export default function ProductTab() {
     setFormRate(String(product.rate || ''))
     setFormPcsPerSet(String(product.pcs_per_set || 1))
     setFormDescription(product.description || '')
-    setFormImage(null)
-    setFormImagePreview(product.image_url || null)
+    setFormIsActive(product.is_active ?? true)
+    setStagedFiles([])
+    setFormError('')
     setShowForm(true)
+  }
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return
+    const files = Array.from(e.target.files)
+
+    const newStaged: StagedMediaFile[] = files.map((file, idx) => {
+      const isVideo = file.type.startsWith('video/')
+      return {
+        id: `${Date.now()}-${idx}-${Math.random().toString(36).slice(2)}`,
+        file,
+        preview: URL.createObjectURL(file),
+        type: isVideo ? 'video' : 'image',
+        isPrimary: stagedFiles.length === 0 && idx === 0 && !isVideo,
+      }
+    })
+
+    setStagedFiles(prev => [...prev, ...newStaged])
+    e.target.value = ''
+  }
+
+  const removeStagedFile = (id: string) => {
+    setStagedFiles(prev => {
+      const target = prev.find(f => f.id === id)
+      if (target) URL.revokeObjectURL(target.preview)
+      const next = prev.filter(f => f.id !== id)
+      if (target?.isPrimary && next.length > 0) {
+        next[0].isPrimary = true
+      }
+      return next
+    })
+  }
+
+  const setPrimaryStaged = (id: string) => {
+    setStagedFiles(prev =>
+      prev.map(f => ({
+        ...f,
+        isPrimary: f.id === id,
+      }))
+    )
   }
 
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault()
+    setFormError('')
+
+    const designNo = formDesignNo.trim()
+    if (!designNo) {
+      setFormError('Design number is required')
+      return
+    }
+
     setFormSaving(true)
 
     try {
-      // Save product data directly — no QR generation (QR is generated on-demand when printing labels)
-      const productData: Record<string, any> = {
-        design_no: formDesignNo.trim(),
+      // Validate unique design number
+      const isAvailable = await checkDesignNoAvailable(designNo, editingProduct?.id)
+      if (!isAvailable) {
+        setFormError(`Design number "${designNo}" is already registered. Please specify a unique design number.`)
+        setFormSaving(false)
+        return
+      }
+
+      const productPayload: Record<string, any> = {
+        design_no: designNo,
         brand: formBrand.trim() || null,
         collection_name: formCollection.trim() || null,
         fabric: formFabric.trim() || null,
         rate: formRate ? parseFloat(formRate) : null,
         pcs_per_set: parseInt(formPcsPerSet) || 1,
         description: formDescription.trim() || null,
+        is_active: formIsActive,
       }
 
-      let savedProduct: any
+      let savedProduct: Product
 
       if (editingProduct) {
-        savedProduct = editingProduct
-        await updateProduct(editingProduct.id, productData)
+        savedProduct = await updateProduct(editingProduct.id, productPayload)
       } else {
-        savedProduct = await createProduct(productData as any)
+        savedProduct = await createProduct(productPayload as any)
       }
 
-      // Close form immediately so user sees instant feedback
-      setShowForm(false)
+      // Upload any staged files
+      if (stagedFiles.length > 0 && savedProduct.id) {
+        let primaryUrl: string | null = null
 
-      // Upload image in background (non-blocking UI)
-      if (formImage && savedProduct?.id) {
-        try {
-          const mediaUrl = await uploadProductMedia(savedProduct.id, formImage)
-          await createProductMedia(savedProduct.id, mediaUrl, 'image', 0)
-          await updateProduct(savedProduct.id, { image_url: mediaUrl })
-        } catch (imgErr) {
-          console.error('Image upload failed:', imgErr)
+        for (let i = 0; i < stagedFiles.length; i++) {
+          const item = stagedFiles[i]
+          try {
+            const mediaUrl = await uploadProductMedia(savedProduct.id, item.file)
+            await createProductMedia(savedProduct.id, mediaUrl, item.type, i)
+            if (item.isPrimary || (!primaryUrl && item.type === 'image')) {
+              primaryUrl = mediaUrl
+            }
+          } catch (uploadErr) {
+            console.error('Failed to upload file:', item.file.name, uploadErr)
+          }
+        }
+
+        if (primaryUrl && (!savedProduct.image_url || stagedFiles.some(f => f.isPrimary))) {
+          await updateProduct(savedProduct.id, { image_url: primaryUrl })
         }
       }
 
-      setFormImage(null)
-      setFormImagePreview(null)
+      // Cleanup
+      stagedFiles.forEach(f => URL.revokeObjectURL(f.preview))
+      setStagedFiles([])
+      setShowForm(false)
       await loadProducts()
     } catch (error: any) {
-      console.error('Error saving product:', error)
-      alert(`Error saving product: ${error?.message || 'Unknown error'}`)
+      setFormError(error?.message || 'Failed to save product')
     } finally {
       setFormSaving(false)
     }
   }
 
-  const openMediaManager = (product: Product) => {
-    setMediaProduct(product)
-    setShowMediaDialog(true)
-  }
-
-
-
-  const handlePrintLabel = async (product: Product) => {
-    const printWindow = window.open('', '_blank')
-    if (!printWindow) return
-
-    let qrUrl = product.qr_code_url || ''
-    if (!qrUrl) {
-      const domain = import.meta.env.VITE_PUBLISHED_DOMAIN || window.location.origin
-      try {
-        qrUrl = await generateQRCodeForProduct(product.design_no, domain)
-      } catch (err) {
-        console.error('QR generation failed:', err)
-      }
-    }
-
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Label - ${product.design_no}</title>
-        <style>
-          @page { size: 4in 6in; margin: 0; }
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { width: 4in; height: 6in; font-family: Arial, sans-serif; display: flex; }
-          .sidebar {
-            writing-mode: vertical-rl;
-            text-orientation: mixed;
-            background: #1a1a1a;
-            color: white;
-            padding: 8px 4px;
-            font-size: 14px;
-            font-weight: bold;
-            letter-spacing: 4px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 0.6in;
-          }
-          .content {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 16px;
-            gap: 12px;
-          }
-          .qr img { width: 2in; height: 2in; }
-          .design-no { font-size: 28px; font-weight: bold; }
-          .rate { font-size: 22px; color: #333; }
-        </style>
-      </head>
-      <body>
-        <div class="sidebar">RANGOLI TEXTILES</div>
-        <div class="content">
-          <div class="qr"><img src="${qrUrl}" /></div>
-          <div class="design-no">D.No: ${product.design_no}</div>
-          <div class="rate">Rate: ₹${product.rate || 0}/pc</div>
-        </div>
-      </body>
-      </html>
-    `)
-    printWindow.document.close()
-    printWindow.print()
-  }
-
-  const handleDownloadQR = async (product: Product) => {
+  // QR Label Print / Download
+  const handleOpenQrModal = async (product: Product) => {
     try {
-      let qrUrl = product.qr_code_url
-      if (!qrUrl) {
-        const domain = import.meta.env.VITE_PUBLISHED_DOMAIN || window.location.origin
-        qrUrl = await generateQRCodeForProduct(product.design_no, domain)
-      }
-
-      if (qrUrl) {
-        const link = document.createElement('a')
-        link.href = qrUrl
-        link.download = `QR_${product.design_no}.png`
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-      }
-    } catch (err) {
-      console.error('Error downloading QR:', err)
-      alert('Failed to download QR code')
+      const qrData = await generateQRCodeForProduct(product.design_no)
+      setPreviewQrProduct(product)
+      setPreviewQrDataUrl(qrData)
+    } catch (err: any) {
+      alert(`Could not generate QR: ${err?.message || 'Error'}`)
     }
   }
 
-  if (loading) {
-    return <div className="flex items-center justify-center py-10">Loading products...</div>
+  const handlePrintLabel = (product: Product, qrDataUrl: string) => {
+    printProductLabel(product, qrDataUrl)
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex gap-4">
-        <Input
-          placeholder="Search by design no, brand, or collection..."
-          value={searchQuery}
-          onChange={(e) => handleSearch(e.target.value)}
-          className="flex-1"
-        />
-        <Button onClick={openCreateForm} className="bg-orange-600 hover:bg-orange-700">
-          <Plus className="w-4 h-4 mr-2" />
-          Add Product
-        </Button>
+      {/* Action and Filter Bar */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <div className="relative w-full sm:w-80">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Input
+              placeholder="Search design number, fabric, brand..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 bg-slate-50 border-slate-200"
+            />
+          </div>
+          <Button onClick={openCreateForm} className="bg-slate-900 hover:bg-slate-800 text-white shrink-0">
+            <Plus className="w-4 h-4 mr-1.5" /> New Product
+          </Button>
+        </div>
+
+        {/* Filter controls */}
+        <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-100 text-xs">
+          <span className="font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+            <Filter className="w-3.5 h-3.5" /> Filters:
+          </span>
+
+          <select
+            value={brandFilter}
+            onChange={(e) => setBrandFilter(e.target.value)}
+            className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-700"
+          >
+            <option value="all">All Brands</option>
+            {uniqueBrands.map(b => <option key={b} value={b}>{b}</option>)}
+          </select>
+
+          <select
+            value={collectionFilter}
+            onChange={(e) => setCollectionFilter(e.target.value)}
+            className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-700"
+          >
+            <option value="all">All Collections</option>
+            {uniqueCollections.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as any)}
+            className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-700"
+          >
+            <option value="all">All Status</option>
+            <option value="active">Active Only</option>
+            <option value="archived">Archived Only</option>
+          </select>
+
+          {(brandFilter !== 'all' || collectionFilter !== 'all' || statusFilter !== 'all' || searchQuery) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setBrandFilter('all')
+                setCollectionFilter('all')
+                setStatusFilter('all')
+                setSearchQuery('')
+              }}
+              className="text-orange-600 hover:text-orange-700 h-7 px-2 text-xs"
+            >
+              Reset Filters
+            </Button>
+          )}
+
+          <span className="ml-auto text-slate-400 font-medium">
+            Showing {filteredProducts.length} of {products.length} designs
+          </span>
+        </div>
       </div>
 
-      <div className="border rounded-lg overflow-x-auto bg-white shadow-sm">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b">
-            <tr>
-              <th className="px-4 py-3 text-left font-medium">Design No</th>
-              <th className="px-4 py-3 text-left font-medium">Brand</th>
-              <th className="px-4 py-3 text-left font-medium">Collection</th>
-              <th className="px-4 py-3 text-left font-medium">Rate</th>
-              <th className="px-4 py-3 text-left font-medium">Pcs/Set</th>
-              <th className="px-4 py-3 text-left font-medium">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {products.length === 0 ? (
+      {/* Products Table */}
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 text-xs font-semibold uppercase tracking-wider">
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
-                  No products found
-                </td>
+                <th className="px-4 py-3 text-left w-16">Photo</th>
+                <th className="px-4 py-3 text-left">Design No</th>
+                <th className="px-4 py-3 text-left">Brand & Collection</th>
+                <th className="px-4 py-3 text-left">Fabric</th>
+                <th className="px-4 py-3 text-right">Rate</th>
+                <th className="px-4 py-3 text-center">Set Specs</th>
+                <th className="px-4 py-3 text-center">Status</th>
+                <th className="px-4 py-3 text-right">Actions</th>
               </tr>
-            ) : (
-              products.map((product) => (
-                <tr key={product.id} className="hover:bg-orange-50/50">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      {product.image_url && (
-                        <img src={product.image_url} alt="" className="w-8 h-8 rounded object-cover" />
-                      )}
-                      <span className="font-medium">{product.design_no}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">{product.brand || '-'}</td>
-                  <td className="px-4 py-3">{product.collection_name || '-'}</td>
-                  <td className="px-4 py-3">{formatCurrency(product.rate || 0)}</td>
-                  <td className="px-4 py-3">{product.pcs_per_set || 1}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => openEditForm(product)} title="Edit">
-                        <Edit2 className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => openMediaManager(product)} title="Media">
-                        <Image className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => handlePrintLabel(product)} title="Print Label">
-                        <Printer className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => handleDownloadQR(product)} title="Download QR">
-                        <Download className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setDeleteConfirm(product.id)} title="Delete">
-                        <Trash2 className="w-4 h-4 text-red-500" />
-                      </Button>
-                    </div>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {loading ? (
+                <tr>
+                  <td colSpan={8} className="py-12 text-center text-slate-400">Loading catalog...</td>
+                </tr>
+              ) : filteredProducts.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                    No products found matching criteria.
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                filteredProducts.map((p) => (
+                  <tr key={p.id} className="hover:bg-slate-50/70 transition-colors">
+                    <td className="px-4 py-2.5">
+                      {p.image_url ? (
+                        <img
+                          src={p.image_url}
+                          alt={p.design_no}
+                          className="w-12 h-12 object-cover rounded-lg border border-slate-200 cursor-pointer hover:opacity-90"
+                          onClick={() => {
+                            setMediaProduct(p)
+                            setShowMediaDialog(true)
+                          }}
+                        />
+                      ) : (
+                        <div
+                          className="w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 border border-dashed border-slate-300 cursor-pointer hover:bg-slate-200"
+                          onClick={() => {
+                            setMediaProduct(p)
+                            setShowMediaDialog(true)
+                          }}
+                        >
+                          <ImageIcon className="w-5 h-5" />
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-extrabold text-slate-900 text-base">{p.design_no}</span>
+                      </div>
+                      <a
+                        href={`/p/${p.design_no}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[11px] text-orange-600 hover:underline flex items-center gap-0.5 mt-0.5 font-medium"
+                      >
+                        <Eye className="w-3 h-3" /> View Public Page
+                      </a>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <p className="font-medium text-slate-800">{p.brand || '-'}</p>
+                      {p.collection_name && (
+                        <p className="text-xs text-slate-500">{p.collection_name}</p>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-slate-600 font-medium">{p.fabric || '-'}</td>
+                    <td className="px-4 py-2.5 text-right font-bold text-slate-900">
+                      {p.rate ? formatCurrency(p.rate) : '-'}
+                    </td>
+                    <td className="px-4 py-2.5 text-center text-slate-600 text-xs">
+                      <span className="bg-slate-100 px-2 py-1 rounded font-mono font-medium">
+                        {p.pcs_per_set || 1} pcs/set
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-center">
+                      <button
+                        onClick={() => handleToggleStatus(p)}
+                        className={`text-xs px-2.5 py-1 rounded-full font-semibold border transition-colors inline-flex items-center gap-1 ${
+                          p.is_active !== false
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                            : 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200'
+                        }`}
+                      >
+                        {p.is_active !== false ? (
+                          <>
+                            <CheckCircle2 className="w-3 h-3" /> Active
+                          </>
+                        ) : (
+                          <>
+                            <XCircle className="w-3 h-3" /> Archived
+                          </>
+                        )}
+                      </button>
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="QR Code & Label"
+                          onClick={() => handleOpenQrModal(p)}
+                          className="h-8 w-8 p-0 text-slate-600 hover:text-slate-900"
+                        >
+                          <QrCode className="w-4 h-4 text-orange-600" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Media Gallery"
+                          onClick={() => {
+                            setMediaProduct(p)
+                            setShowMediaDialog(true)
+                          }}
+                          className="h-8 w-8 p-0 text-slate-600 hover:text-slate-900"
+                        >
+                          <ImageIcon className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Edit Product"
+                          onClick={() => openEditForm(p)}
+                          className="h-8 w-8 p-0 text-slate-600 hover:text-slate-900"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Delete Product"
+                          onClick={() => setDeleteConfirm(p.id)}
+                          className="h-8 w-8 p-0 text-rose-500 hover:text-rose-700"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      {/* Create/Edit Product Dialog */}
+      {/* Create / Edit Product Modal */}
       <Dialog open={showForm} onOpenChange={setShowForm}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-[560px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingProduct ? 'Edit Product' : 'Add Product'}</DialogTitle>
+            <DialogTitle className="text-xl font-bold">
+              {editingProduct ? `Edit Product — ${editingProduct.design_no}` : 'Add New Textile Product'}
+            </DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSaveProduct} className="space-y-3">
+
+          <form onSubmit={handleSaveProduct} className="space-y-4 pt-2">
+            {formError && (
+              <p className="text-xs font-semibold text-rose-600 bg-rose-50 p-3 rounded-lg border border-rose-200">
+                {formError}
+              </p>
+            )}
+
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1 col-span-2">
-                <Label>Design No *</Label>
+              <div className="space-y-1.5">
+                <Label>Design Number *</Label>
                 <Input
                   value={formDesignNo}
-                  onChange={(e) => setFormDesignNo(e.target.value)}
-                  placeholder="e.g. RT-2024-001"
-                  disabled={!!editingProduct}
+                  onChange={(e) => setFormDesignNo(e.target.value.toUpperCase())}
+                  placeholder="e.g. 4955"
                   required
+                  className="font-bold text-slate-900"
                 />
               </div>
-              <div className="space-y-1">
-                <Label>Brand</Label>
-                <Input value={formBrand} onChange={(e) => setFormBrand(e.target.value)} placeholder="Brand" />
-              </div>
-              <div className="space-y-1">
-                <Label>Collection</Label>
-                <Input value={formCollection} onChange={(e) => setFormCollection(e.target.value)} placeholder="Collection" />
-              </div>
-              <div className="space-y-1">
-                <Label>Fabric</Label>
-                <Input value={formFabric} onChange={(e) => setFormFabric(e.target.value)} placeholder="Fabric type" />
-              </div>
-              <div className="space-y-1">
-                <Label>Rate (per piece)</Label>
-                <Input type="number" value={formRate} onChange={(e) => setFormRate(e.target.value)} placeholder="₹" min="0" step="0.01" />
-              </div>
-              <div className="space-y-1">
-                <Label>Pcs per Set</Label>
-                <Input type="number" value={formPcsPerSet} onChange={(e) => setFormPcsPerSet(e.target.value)} min="1" />
-              </div>
-              <div className="space-y-1 col-span-2">
-                <Label>Description</Label>
-                <Input value={formDescription} onChange={(e) => setFormDescription(e.target.value)} placeholder="Description" />
-              </div>
-
-              {/* Image Upload */}
-              <div className="space-y-2 col-span-2">
-                <Label>Product Image</Label>
-                <div
-                  onClick={() => document.getElementById('product-image-input')?.click()}
-                  className="border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:border-orange-300 hover:bg-orange-50/50 transition-colors"
-                >
-                  {formImagePreview ? (
-                    <div className="relative">
-                      <img src={formImagePreview} alt="Preview" className="w-full h-32 object-contain rounded" />
-                      <p className="text-xs text-gray-400 mt-1">{formImage ? formImage.name : 'Current image'} — click to change</p>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center gap-1 text-gray-400">
-                      <Upload className="w-6 h-6" />
-                      <p className="text-sm">Click to upload an image</p>
-                    </div>
-                  )}
-                  <input
-                    id="product-image-input"
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0]
-                      if (file) {
-                        setFormImage(file)
-                        setFormImagePreview(URL.createObjectURL(file))
-                      }
-                    }}
-                  />
-                </div>
+              <div className="space-y-1.5">
+                <Label>Wholesale Rate (₹/pc)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={formRate}
+                  onChange={(e) => setFormRate(e.target.value)}
+                  placeholder="e.g. 850"
+                />
               </div>
             </div>
-            <Button type="submit" className="w-full bg-orange-600 hover:bg-orange-700" disabled={formSaving || !formDesignNo.trim()}>
-              {formSaving ? 'Saving...' : editingProduct ? 'Update Product' : 'Create Product'}
-            </Button>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label>Brand</Label>
+                <Input
+                  value={formBrand}
+                  onChange={(e) => setFormBrand(e.target.value)}
+                  placeholder="e.g. Rangoli"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Collection</Label>
+                <Input
+                  value={formCollection}
+                  onChange={(e) => setFormCollection(e.target.value)}
+                  placeholder="e.g. Silk Edition"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Fabric</Label>
+                <Input
+                  value={formFabric}
+                  onChange={(e) => setFormFabric(e.target.value)}
+                  placeholder="e.g. Pure Cotton"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Pieces Per Set</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={formPcsPerSet}
+                  onChange={(e) => setFormPcsPerSet(e.target.value)}
+                  placeholder="1"
+                />
+              </div>
+              <div className="flex items-center gap-2 pt-6">
+                <input
+                  type="checkbox"
+                  id="prod-is-active"
+                  checked={formIsActive}
+                  onChange={(e) => setFormIsActive(e.target.checked)}
+                  className="w-4 h-4 rounded text-orange-600 border-slate-300"
+                />
+                <Label htmlFor="prod-is-active" className="cursor-pointer text-sm font-medium">
+                  Active in Catalog
+                </Label>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Description / Work Notes</Label>
+              <textarea
+                value={formDescription}
+                onChange={(e) => setFormDescription(e.target.value)}
+                placeholder="Product specifications, embroidery details, wash care..."
+                rows={2}
+                className="w-full text-sm rounded-md border border-slate-200 bg-white p-2.5 focus:outline-none focus:ring-2 focus:ring-orange-500"
+              />
+            </div>
+
+            {/* Media Upload & Preview */}
+            <div className="space-y-2 border-t pt-3">
+              <div className="flex justify-between items-center">
+                <Label className="text-slate-800 font-semibold">Product Photographs & Videos</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="h-8 text-xs border-dashed"
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1" /> Add Photos / Videos
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*,video/*"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+              </div>
+
+              {stagedFiles.length > 0 && (
+                <div className="grid grid-cols-4 gap-2.5 pt-2">
+                  {stagedFiles.map((sf) => (
+                    <div
+                      key={sf.id}
+                      className={`relative rounded-lg overflow-hidden border-2 group aspect-square bg-slate-100 ${
+                        sf.isPrimary ? 'border-orange-500 ring-2 ring-orange-200' : 'border-slate-200'
+                      }`}
+                    >
+                      {sf.type === 'video' ? (
+                        <video src={sf.preview} className="w-full h-full object-cover" />
+                      ) : (
+                        <img src={sf.preview} alt="" className="w-full h-full object-cover" />
+                      )}
+
+                      {/* Controls overlay */}
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5">
+                        {sf.type === 'image' && (
+                          <button
+                            type="button"
+                            title="Set as primary"
+                            onClick={() => setPrimaryStaged(sf.id)}
+                            className={`p-1.5 rounded-full ${
+                              sf.isPrimary ? 'bg-orange-500 text-white' : 'bg-white/80 hover:bg-white text-slate-800'
+                            }`}
+                          >
+                            <Star className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          title="Remove"
+                          onClick={() => removeStagedFile(sf.id)}
+                          className="p-1.5 rounded-full bg-rose-500 text-white hover:bg-rose-600"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      {sf.isPrimary && (
+                        <div className="absolute top-1 left-1 bg-orange-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow">
+                          PRIMARY
+                        </div>
+                      )}
+                      {sf.type === 'video' && (
+                        <div className="absolute bottom-1 right-1 bg-black/60 text-white p-0.5 rounded">
+                          <Film className="w-3 h-3" />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={formSaving} className="bg-slate-900 hover:bg-slate-800 text-white">
+                {formSaving ? 'Saving Product...' : editingProduct ? 'Update Product' : 'Create Product'}
+              </Button>
+            </div>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Media Manager (enhanced) */}
-      <MediaManager
-        product={mediaProduct}
-        open={showMediaDialog}
-        onOpenChange={setShowMediaDialog}
-      />
+      {/* QR Code & Label Modal */}
+      <Dialog open={previewQrProduct !== null} onOpenChange={() => setPreviewQrProduct(null)}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold">
+              Product QR Label — {previewQrProduct?.design_no}
+            </DialogTitle>
+          </DialogHeader>
 
-      {/* Delete Confirm */}
-      <AlertDialog open={deleteConfirm !== null}>
+          {previewQrProduct && previewQrDataUrl && (
+            <div className="space-y-4 py-2 text-center">
+              <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-2xs inline-block mx-auto">
+                <img
+                  src={previewQrDataUrl}
+                  alt={`QR for ${previewQrProduct.design_no}`}
+                  className="w-48 h-48 mx-auto"
+                />
+                <p className="text-xs font-mono text-slate-400 mt-2">
+                  /p/{previewQrProduct.design_no}
+                </p>
+              </div>
+
+              <div className="text-xs text-slate-500">
+                This QR code permanently routes to the public catalog page. It remains valid even after price or photo changes.
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => downloadQRCode(previewQrDataUrl, `QR_${previewQrProduct.design_no}`)}
+                >
+                  <Download className="w-4 h-4 mr-1.5" /> Download QR
+                </Button>
+                <Button
+                  className="flex-1 bg-slate-900 hover:bg-slate-800 text-white"
+                  onClick={() => handlePrintLabel(previewQrProduct, previewQrDataUrl)}
+                >
+                  <Printer className="w-4 h-4 mr-1.5" /> Print Label
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Media Manager for existing products */}
+      {mediaProduct && (
+        <MediaManager
+          product={mediaProduct}
+          open={showMediaDialog}
+          onOpenChange={(open) => {
+            setShowMediaDialog(open)
+            if (!open) loadProducts()
+          }}
+        />
+      )}
+
+      {/* Delete Confirmation */}
+      <AlertDialog open={deleteConfirm !== null} onOpenChange={() => setDeleteConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Product</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure? This will delete the product and all associated media files.
+              Are you sure you want to permanently delete this design and its associated media files?
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="flex gap-4">
-            <AlertDialogCancel onClick={() => setDeleteConfirm(null)}>Cancel</AlertDialogCancel>
+          <div className="flex justify-end gap-2">
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => { if (deleteConfirm) handleDelete(deleteConfirm) }}
-              className="bg-red-600 hover:bg-red-700"
+              onClick={() => deleteConfirm && handleDelete(deleteConfirm)}
+              className="bg-rose-600 hover:bg-rose-700"
             >
               Delete
             </AlertDialogAction>

@@ -12,6 +12,7 @@ export interface Product {
   description?: string
   image_url?: string
   qr_code_url?: string
+  is_active?: boolean
   created_at: string
   updated_at: string
 }
@@ -26,6 +27,8 @@ export interface ProductMedia {
 }
 
 // Order types
+export type OrderStatus = 'draft' | 'confirmed' | 'cancelled'
+
 export interface Order {
   id: number
   order_no: string
@@ -34,6 +37,13 @@ export interface Order {
   agent?: string | null
   gst_number?: string | null
   order_date?: string | null
+  export_date?: string | null
+  brand?: string | null
+  product_name?: string | null
+  notes?: string | null
+  status?: OrderStatus
+  confirmed_at?: string | null
+  confirmed_by?: string | null
   total_amount: number
   created_at: string
   updated_at: string
@@ -52,7 +62,7 @@ export interface OrderItem {
   created_at: string
 }
 
-// Invoice types
+// Invoice types (legacy support)
 export interface Invoice {
   id: number
   invoice_no: string
@@ -93,6 +103,8 @@ export interface InventoryStock {
   updated_at: string
 }
 
+export type MovementType = 'INTAKE' | 'TRANSFER' | 'DISPATCH' | 'ADJUSTMENT'
+
 export interface StockMovement {
   id: number
   product_id: number
@@ -101,7 +113,45 @@ export interface StockMovement {
   sets: number
   total_pcs: number
   notes?: string
+  reference_no?: string
+  staff_name?: string
+  movement_type?: MovementType
   created_at: string
+}
+
+// Party & Agent Directory Types
+export interface Party {
+  id: number
+  name: string
+  station?: string | null
+  gst_number?: string | null
+  phone?: string | null
+  address?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface Agent {
+  id: number
+  name: string
+  phone?: string | null
+  station?: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+// Operational Dashboard summary
+export interface DashboardStats {
+  total_products: number
+  active_products: number
+  godown_sets: number
+  godown_pcs: number
+  shop_sets: number
+  shop_pcs: number
+  total_orders: number
+  confirmed_orders: number
+  draft_orders: number
 }
 
 // Inquiry types

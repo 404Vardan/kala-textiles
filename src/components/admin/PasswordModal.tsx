@@ -9,14 +9,15 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import supabase from '@/services/supabase'
+import { verifyAdminPassword } from '@/hooks/useAdminAuth'
 
 interface PasswordModalProps {
   isOpen: boolean
   onSuccess: () => void
+  onClose?: () => void
 }
 
-export function PasswordModal({ isOpen, onSuccess }: PasswordModalProps) {
+export function PasswordModal({ isOpen, onSuccess, onClose }: PasswordModalProps) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -27,48 +28,35 @@ export function PasswordModal({ isOpen, onSuccess }: PasswordModalProps) {
     setLoading(true)
 
     try {
-      // Fetch admin settings
-      const { data: adminData, error: fetchError } = await supabase
-        .from('admin_settings')
-        .select('password_hash')
-        .limit(1)
-        .single()
-
-      if (fetchError) {
-        setError('Failed to verify admin credentials')
-        return
-      }
-
-      // Simple password comparison (in production, use bcrypt)
-      if (password === adminData.password_hash) {
+      const isValid = await verifyAdminPassword(password.trim())
+      if (isValid) {
         onSuccess()
         setPassword('')
       } else {
-        setError('Incorrect password')
+        setError('Incorrect administrator password')
       }
-    } catch (err) {
-      setError('An error occurred. Please try again.')
-      console.error(err)
+    } catch (err: any) {
+      setError(err?.message || 'Verification failed. Please try again.')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={() => {}}>
-      <DialogContent className="sm:max-w-[425px]" onInteractOutside={(e) => e.preventDefault()}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open && onClose) onClose() }}>
+      <DialogContent className="sm:max-w-[400px]" onInteractOutside={(e) => { if (!onClose) e.preventDefault() }}>
         <DialogHeader>
-          <DialogTitle>Admin Access</DialogTitle>
+          <DialogTitle className="text-xl font-bold">Admin Portal</DialogTitle>
           <DialogDescription>
-            Enter the admin password to access the dashboard
+            Enter administrative credentials to access management tools
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4 py-4">
+        <form onSubmit={handleSubmit} className="space-y-4 py-3">
           <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
+            <Label htmlFor="admin-password">Password</Label>
             <Input
-              id="password"
+              id="admin-password"
               type="password"
               placeholder="Enter admin password"
               value={password}
@@ -79,15 +67,15 @@ export function PasswordModal({ isOpen, onSuccess }: PasswordModalProps) {
           </div>
 
           {error && (
-            <p className="text-sm text-red-600">{error}</p>
+            <p className="text-sm font-medium text-red-600 bg-red-50 p-2 rounded border border-red-200">{error}</p>
           )}
 
           <Button
             type="submit"
-            className="w-full"
+            className="w-full bg-slate-900 hover:bg-slate-800 text-white font-medium"
             disabled={loading || !password.trim()}
           >
-            {loading ? 'Verifying...' : 'Login'}
+            {loading ? 'Verifying...' : 'Unlock Dashboard'}
           </Button>
         </form>
       </DialogContent>

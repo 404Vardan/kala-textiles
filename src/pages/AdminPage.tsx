@@ -5,28 +5,38 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PasswordModal } from '@/components/admin/PasswordModal'
 import { SettingsDialog } from '@/components/admin/SettingsDialog'
 import { useAdminAuth } from '@/hooks/useAdminAuth'
+import DashboardTab from '@/components/admin/DashboardTab'
 import ProductTab from '@/components/admin/ProductTab'
-import InvoiceTab from '@/components/admin/InvoiceTab'
-import InquiryTab from '@/components/admin/InquiryTab'
 import StockTab from '@/components/admin/StockTab'
 import OrderTab from '@/components/admin/OrderTab'
 import ShopScanTab from '@/components/admin/ShopScanTab'
+import PartyTab from '@/components/admin/PartyTab'
+import AgentTab from '@/components/admin/AgentTab'
+import InvoiceTab from '@/components/admin/InvoiceTab'
+import InquiryTab from '@/components/admin/InquiryTab'
 import {
   LogOut,
   Settings,
+  LayoutDashboard,
   Package,
   Warehouse,
   ShoppingCart,
   ScanLine,
+  Users,
+  UserCheck,
   FileText,
   MessageSquare,
+  ShieldCheck,
 } from 'lucide-react'
 
 const TAB_CONFIG = [
+  { value: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { value: 'products', label: 'Products', icon: Package },
-  { value: 'stock', label: 'Stock', icon: Warehouse },
+  { value: 'stock', label: 'Stock & Godown', icon: Warehouse },
   { value: 'orders', label: 'Orders', icon: ShoppingCart },
-  { value: 'shopscan', label: 'Shop Scan', icon: ScanLine },
+  { value: 'shopscan', label: 'Shop Terminal', icon: ScanLine },
+  { value: 'parties', label: 'Parties', icon: Users },
+  { value: 'agents', label: 'Agents', icon: UserCheck },
   { value: 'invoices', label: 'Invoices', icon: FileText },
   { value: 'inquiries', label: 'Inquiries', icon: MessageSquare },
 ]
@@ -35,9 +45,9 @@ export default function AdminPage() {
   const { isAuthenticated, login, logout } = useAdminAuth()
   const [showPassword, setShowPassword] = useState(!isAuthenticated)
   const [showSettings, setShowSettings] = useState(false)
-  const [activeTab, setActiveTab] = useState('products')
+  const [activeTab, setActiveTab] = useState('dashboard')
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   // Handle tab from URL params
   useEffect(() => {
@@ -46,6 +56,11 @@ export default function AdminPage() {
       setActiveTab(tab)
     }
   }, [searchParams])
+
+  const handleTabChange = (val: string) => {
+    setActiveTab(val)
+    setSearchParams({ tab: val })
+  }
 
   const handlePasswordSuccess = () => {
     login()
@@ -63,65 +78,102 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Sticky Header */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-sm border-b shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-orange-600 to-rose-600 bg-clip-text text-transparent">
-              Rangoli Textiles
-            </h1>
-            <p className="text-xs text-gray-500 hidden sm:block">Admin Dashboard</p>
+    <div className="min-h-screen bg-slate-50/70 text-slate-800">
+      {/* Sticky Top Navigation */}
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-2xs">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-slate-950 via-slate-900 to-orange-950 flex items-center justify-center text-white font-black text-base shadow-sm">
+              R
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
+                  Rangoli Textiles
+                </h1>
+                <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                  <ShieldCheck className="w-3 h-3 text-orange-600" /> System Manager
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 font-medium">Wholesale Business Operations</p>
+            </div>
           </div>
+
           <div className="flex items-center gap-2">
             <Button
               variant="ghost"
               size="sm"
               onClick={() => setShowSettings(true)}
-              className="text-gray-600"
+              className="text-slate-600 hover:text-slate-900 text-xs font-semibold"
             >
-              <Settings className="w-4 h-4" />
-              <span className="hidden sm:inline ml-1">Settings</span>
+              <Settings className="w-4 h-4 mr-1" />
+              Settings
             </Button>
-            <Button variant="outline" size="sm" onClick={handleLogout}>
-              <LogOut className="w-4 h-4" />
-              <span className="hidden sm:inline ml-1">Logout</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleLogout}
+              className="text-slate-600 hover:text-rose-600 text-xs font-semibold border-slate-200"
+            >
+              <LogOut className="w-4 h-4 mr-1" />
+              Logout
             </Button>
           </div>
         </div>
       </header>
 
+      {/* Main Workspace */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="w-full flex overflow-x-auto gap-1 bg-white border rounded-lg p-1 shadow-sm mb-6">
-            {TAB_CONFIG.map(tab => (
-              <TabsTrigger
-                key={tab.value}
-                value={tab.value}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm whitespace-nowrap data-[state=active]:bg-orange-50 data-[state=active]:text-orange-700 flex-1"
-              >
-                <tab.icon className="w-4 h-4" />
-                <span className="hidden sm:inline">{tab.label}</span>
-              </TabsTrigger>
-            ))}
-          </TabsList>
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full space-y-6">
+          {/* Scrollable responsive tabs list */}
+          <div className="bg-white p-1 rounded-xl border border-slate-200 shadow-2xs overflow-x-auto">
+            <TabsList className="w-full flex justify-start gap-1 bg-transparent p-0">
+              {TAB_CONFIG.map(tab => (
+                <TabsTrigger
+                  key={tab.value}
+                  value={tab.value}
+                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold whitespace-nowrap rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white data-[state=active]:shadow-xs text-slate-600 hover:text-slate-900 transition-all cursor-pointer"
+                >
+                  <tab.icon className="w-3.5 h-3.5" />
+                  <span>{tab.label}</span>
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
 
-          <TabsContent value="products" className="mt-0">
+          <TabsContent value="dashboard" className="mt-0 focus:outline-none">
+            {activeTab === 'dashboard' && <DashboardTab onNavigateTab={handleTabChange} />}
+          </TabsContent>
+
+          <TabsContent value="products" className="mt-0 focus:outline-none">
             {activeTab === 'products' && <ProductTab />}
           </TabsContent>
-          <TabsContent value="stock" className="mt-0">
+
+          <TabsContent value="stock" className="mt-0 focus:outline-none">
             {activeTab === 'stock' && <StockTab />}
           </TabsContent>
-          <TabsContent value="orders" className="mt-0">
+
+          <TabsContent value="orders" className="mt-0 focus:outline-none">
             {activeTab === 'orders' && <OrderTab />}
           </TabsContent>
-          <TabsContent value="shopscan" className="mt-0">
+
+          <TabsContent value="shopscan" className="mt-0 focus:outline-none">
             {activeTab === 'shopscan' && <ShopScanTab />}
           </TabsContent>
-          <TabsContent value="invoices" className="mt-0">
+
+          <TabsContent value="parties" className="mt-0 focus:outline-none">
+            {activeTab === 'parties' && <PartyTab />}
+          </TabsContent>
+
+          <TabsContent value="agents" className="mt-0 focus:outline-none">
+            {activeTab === 'agents' && <AgentTab />}
+          </TabsContent>
+
+          <TabsContent value="invoices" className="mt-0 focus:outline-none">
             {activeTab === 'invoices' && <InvoiceTab />}
           </TabsContent>
-          <TabsContent value="inquiries" className="mt-0">
+
+          <TabsContent value="inquiries" className="mt-0 focus:outline-none">
             {activeTab === 'inquiries' && <InquiryTab />}
           </TabsContent>
         </Tabs>

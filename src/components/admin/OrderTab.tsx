@@ -17,12 +17,39 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { fetchOrders, deleteOrder, fetchOrderItems, createOrderWithItems, generateOrderNo, updateOrder, deleteOrderItemsByOrderId, createOrderItemBatch } from '@/services/orders'
+import {
+  fetchOrders,
+  deleteOrder,
+  fetchOrderItems,
+  createOrderWithItems,
+  generateOrderNo,
+  updateOrder,
+  deleteOrderItemsByOrderId,
+  createOrderItemBatch,
+  duplicateOrder,
+  updateOrderStatus,
+} from '@/services/orders'
 import { fetchProducts } from '@/services/products'
+import { fetchParties, findOrCreateParty } from '@/services/parties'
+import { fetchAgents, findOrCreateAgent } from '@/services/agents'
+import { fetchLocations, confirmOrderAndDeductStock } from '@/services/inventory'
 import { useQRScanner } from '@/hooks/useQRScanner'
-import type { Order, OrderItem, Product } from '@/types'
+import type { Order, Product, Party, Agent, InventoryLocation, OrderStatus } from '@/types'
 import { formatCurrency, formatDate } from '@/utils/formatters'
-import { Plus, Trash2, Eye, QrCode, Search, Share2, Download, X, Edit2, Zap } from 'lucide-react'
+import { downloadOrderPdf } from '@/utils/orderPdfGenerator'
+import {
+  Plus,
+  Trash2,
+  Search,
+  Download,
+  Edit2,
+  Copy,
+  CheckCircle2,
+  Clock,
+  AlertCircle,
+  Camera,
+  Ban,
+} from 'lucide-react'
 
 interface OrderItemDraft {
   design_no: string
@@ -45,7 +72,20 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
   const [showForm, setShowForm] = useState(false)
   const [editingOrder, setEditingOrder] = useState<Order | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null)
-  const [viewOrder, setViewOrder] = useState<{ order: Order; items: OrderItem[] } | null>(null)
+  const [confirmModalOrder, setConfirmModalOrder] = useState<Order | null>(null)
+  const [deductLocationId, setDeductLocationId] = useState<string>('')
+  const [confirmStaffName, setConfirmStaffName] = useState(isStaff ? 'Staff' : 'Admin')
+  const [confirmLoading, setConfirmLoading] = useState(false)
+
+  // Filters
+  const [statusFilter, setStatusFilter] = useState<'all' | OrderStatus>('all')
+  const [searchQuery, setSearchQuery] = useState('')
+
+  // Directories & Products Cache
+  const [products, setProducts] = useState<Product[]>([])
+  const [parties, setParties] = useState<Party[]>([])
+  const [agents, setAgents] = useState<Agent[]>([])
+  const [locations, setLocations] = useState<InventoryLocation[]>([])
 
   // Form fields
   const [partyName, setPartyName] = useState('')
@@ -53,24 +93,34 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
   const [agent, setAgent] = useState('')
   const [gstNumber, setGstNumber] = useState('')
   const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0])
+  const [exportDate, setExportDate] = useState('')
+  const [brand, setBrand] = useState('')
+  const [productName, setProductName] = useState('')
+  const [notes, setNotes] = useState('')
   const [items, setItems] = useState<OrderItemDraft[]>([])
   const [formLoading, setFormLoading] = useState(false)
+  const [formError, setFormError] = useState('')
+
+  // Autocomplete suggestions
+  const [partySuggestions, setPartySuggestions] = useState<Party[]>([])
+  const [agentSuggestions, setAgentSuggestions] = useState<Agent[]>([])
+  const [showPartySuggestions, setShowPartySuggestions] = useState(false)
+  const [showAgentSuggestions, setShowAgentSuggestions] = useState(false)
 
   // Item entry
   const [itemSearch, setItemSearch] = useState('')
   const [searchResults, setSearchResults] = useState<Product[]>([])
-  const [products, setProducts] = useState<Product[]>([])
   const [showScanner, setShowScanner] = useState(false)
 
   useEffect(() => {
     loadOrders()
-    fetchProducts(500).then(setProducts).catch(console.error)
+    loadAuxiliaryData()
   }, [])
 
   const loadOrders = async () => {
     try {
       setLoading(true)
-      const data = await fetchOrders()
+      const data = await fetchOrders({ limit: 200 })
       setOrders(data)
     } catch (error) {
       console.error('Error loading orders:', error)
@@ -79,11 +129,76 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
     }
   }
 
+  const loadAuxiliaryData = async () => {
+    try {
+      const [prods, pts, ags, locs] = await Promise.all([
+        fetchProducts({ limit: 500 }),
+        fetchParties(),
+        fetchAgents(),
+        fetchLocations(),
+      ])
+      setProducts(prods)
+      setParties(pts)
+      setAgents(ags)
+      setLocations(locs)
+
+      // Default stock deduction to Shop location
+      const shopLoc = locs.find(l => l.name.toLowerCase() === 'shop')
+      if (shopLoc) setDeductLocationId(String(shopLoc.id))
+      else if (locs.length > 0) setDeductLocationId(String(locs[0].id))
+    } catch (err) {
+      console.error('Error loading auxiliary data:', err)
+    }
+  }
+
+  // Handle party name typing & autocomplete
+  const handlePartyChange = (value: string) => {
+    setPartyName(value)
+    if (value.trim().length > 1) {
+      const q = value.toLowerCase()
+      const matches = parties.filter(p => p.name.toLowerCase().includes(q)).slice(0, 5)
+      setPartySuggestions(matches)
+      setShowPartySuggestions(matches.length > 0)
+    } else {
+      setShowPartySuggestions(false)
+    }
+  }
+
+  const selectParty = (party: Party) => {
+    setPartyName(party.name)
+    if (party.station) setStation(party.station)
+    if (party.gst_number) setGstNumber(party.gst_number)
+    setShowPartySuggestions(false)
+  }
+
+  // Handle agent typing & autocomplete
+  const handleAgentChange = (value: string) => {
+    setAgent(value)
+    if (value.trim().length > 1) {
+      const q = value.toLowerCase()
+      const matches = agents.filter(a => a.name.toLowerCase().includes(q)).slice(0, 5)
+      setAgentSuggestions(matches)
+      setShowAgentSuggestions(matches.length > 0)
+    } else {
+      setShowAgentSuggestions(false)
+    }
+  }
+
+  const selectAgent = (agentRecord: Agent) => {
+    setAgent(agentRecord.name)
+    setShowAgentSuggestions(false)
+  }
+
+  // Item search
   const handleSearchItem = (query: string) => {
     setItemSearch(query)
     if (query.trim()) {
       const q = query.toLowerCase()
-      setSearchResults(products.filter(p => p.design_no.toLowerCase().includes(q)).slice(0, 10))
+      setSearchResults(
+        products
+          .filter(p => p.design_no.toLowerCase().includes(q) || (p.brand && p.brand.toLowerCase().includes(q)))
+          .slice(0, 8)
+      )
     } else {
       setSearchResults([])
     }
@@ -91,7 +206,7 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
 
   const addItemFromProduct = useCallback((product: Product) => {
     setItems(prev => {
-      const existingIndex = prev.findIndex(i => i.design_no === product.design_no)
+      const existingIndex = prev.findIndex(i => i.design_no.toLowerCase() === product.design_no.toLowerCase())
       if (existingIndex !== -1) {
         const updated = [...prev]
         const item = { ...updated[existingIndex] }
@@ -103,35 +218,48 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
       }
 
       const pcsPerSet = product.pcs_per_set || 1
-      return [...prev, {
-        design_no: product.design_no,
-        rate: product.rate || 0,
-        sets: 1,
-        pcs_per_set: pcsPerSet,
-        total_pcs: pcsPerSet,
-        line_total: (product.rate || 0) * pcsPerSet,
-        product_id: product.id,
-        thumbnail: product.image_url || undefined,
-      }]
+      const rate = product.rate || 0
+      return [
+        ...prev,
+        {
+          design_no: product.design_no,
+          rate: rate,
+          sets: 1,
+          pcs_per_set: pcsPerSet,
+          total_pcs: pcsPerSet,
+          line_total: rate * pcsPerSet,
+          product_id: product.id,
+          thumbnail: product.image_url || undefined,
+        },
+      ]
     })
     setItemSearch('')
     setSearchResults([])
   }, [])
 
-  // Ultra-fast QR scanner
-  const handleQRScan = useCallback((text: string) => {
-    const match = text.match(/\/p\/([^/?#]+)/)
-    if (match) {
-      const product = products.find(p => p.design_no === match[1])
-      if (product) addItemFromProduct(product)
-    }
-  }, [products, addItemFromProduct])
+  // QR Scanner hook
+  const handleQRScan = useCallback(
+    (text: string) => {
+      const match = text.match(/\/p\/([^/?#]+)/)
+      const scannedCode = match ? match[1] : text.trim()
 
-  const { status: scannerStatus } = useQRScanner({
+      if (scannedCode) {
+        const product = products.find(
+          p => p.design_no.toLowerCase() === scannedCode.toLowerCase()
+        )
+        if (product) {
+          addItemFromProduct(product)
+        }
+      }
+    },
+    [products, addItemFromProduct]
+  )
+
+  useQRScanner({
     elementId: 'order-qr-reader',
     onScan: handleQRScan,
     active: showScanner,
-    cooldownMs: 600,
+    cooldownMs: 700,
   })
 
   const updateItem = (index: number, field: string, value: number) => {
@@ -139,12 +267,16 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
     const item = { ...updated[index] }
 
     if (field === 'sets') {
-      item.sets = value
-      item.total_pcs = value * item.pcs_per_set
+      item.sets = Math.max(0, value)
+      item.total_pcs = item.sets * item.pcs_per_set
       item.line_total = item.rate * item.total_pcs
     } else if (field === 'rate') {
-      item.rate = value
-      item.line_total = value * item.total_pcs
+      item.rate = Math.max(0, value)
+      item.line_total = item.rate * item.total_pcs
+    } else if (field === 'pcs_per_set') {
+      item.pcs_per_set = Math.max(1, value)
+      item.total_pcs = item.sets * item.pcs_per_set
+      item.line_total = item.rate * item.total_pcs
     }
 
     updated[index] = item
@@ -155,18 +287,24 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
     setItems(items.filter((_, i) => i !== index))
   }
 
+  const totalSets = items.reduce((sum, i) => sum + (i.sets || 0), 0)
+  const totalPieces = items.reduce((sum, i) => sum + (i.total_pcs || 0), 0)
   const totalAmount = items.reduce((sum, i) => sum + i.line_total, 0)
 
-  // Reset form
   const resetForm = () => {
     setPartyName('')
     setStation('')
     setAgent('')
     setGstNumber('')
     setOrderDate(new Date().toISOString().split('T')[0])
+    setExportDate('')
+    setBrand('')
+    setProductName('')
+    setNotes('')
     setItems([])
     setEditingOrder(null)
     setShowScanner(false)
+    setFormError('')
   }
 
   const openCreateForm = () => {
@@ -174,19 +312,23 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
     setShowForm(true)
   }
 
-  const openEditForm = async (order: Order) => {
-    setEditingOrder(order)
-    setPartyName(order.party_name)
-    setStation(order.station || '')
-    setAgent(order.agent || '')
-    setGstNumber(order.gst_number || '')
-    setOrderDate(order.order_date || new Date().toISOString().split('T')[0])
+  const openEditForm = async (ord: Order) => {
+    setEditingOrder(ord)
+    setPartyName(ord.party_name)
+    setStation(ord.station || '')
+    setAgent(ord.agent || '')
+    setGstNumber(ord.gst_number || '')
+    setOrderDate(ord.order_date || new Date().toISOString().split('T')[0])
+    setExportDate(ord.export_date || '')
+    setBrand(ord.brand || '')
+    setProductName(ord.product_name || '')
+    setNotes(ord.notes || '')
+    setFormError('')
 
-    // Load existing items
     try {
-      const orderItems = await fetchOrderItems(order.id)
+      const orderItems = await fetchOrderItems(ord.id)
       const drafts: OrderItemDraft[] = orderItems.map(item => {
-        const product = products.find(p => p.design_no === item.design_no)
+        const prod = products.find(p => p.design_no === item.design_no)
         return {
           design_no: item.design_no || '',
           rate: item.rate || 0,
@@ -195,7 +337,7 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
           total_pcs: item.total_pcs || 0,
           line_total: item.line_total || 0,
           product_id: item.product_id || undefined,
-          thumbnail: product?.image_url || undefined,
+          thumbnail: prod?.image_url || undefined,
         }
       })
       setItems(drafts)
@@ -206,21 +348,48 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
     setShowForm(true)
   }
 
-  const handleSaveOrder = async () => {
-    setFormLoading(true)
+  const handleDuplicate = async (ord: Order) => {
     try {
+      const duplicated = await duplicateOrder(ord.id)
+      setOrders([duplicated, ...orders])
+      alert(`Order successfully duplicated as draft: ${duplicated.order_no}`)
+    } catch (err: any) {
+      alert(`Error duplicating order: ${err?.message || 'Error'}`)
+    }
+  }
+
+  const handleSaveOrder = async () => {
+    if (!partyName.trim()) {
+      setFormError('Party Name is mandatory')
+      return
+    }
+    if (items.length === 0) {
+      setFormError('Please add at least one design item to the order')
+      return
+    }
+
+    setFormLoading(true)
+    setFormError('')
+
+    try {
+      // Auto-register party and agent in master directories
+      await findOrCreateParty(partyName, station, gstNumber).catch(() => {})
+      if (agent.trim()) await findOrCreateAgent(agent, station).catch(() => {})
+
       if (editingOrder) {
-        // Update existing order
         await updateOrder(editingOrder.id, {
-          party_name: partyName,
-          station: station || null,
-          agent: agent || null,
-          gst_number: gstNumber || null,
+          party_name: partyName.trim(),
+          station: station.trim() || null,
+          agent: agent.trim() || null,
+          gst_number: gstNumber.trim() || null,
           order_date: orderDate || null,
+          export_date: exportDate || null,
+          brand: brand.trim() || null,
+          product_name: productName.trim() || null,
+          notes: notes.trim() || null,
           total_amount: totalAmount,
         })
 
-        // Delete old items and re-insert
         await deleteOrderItemsByOrderId(editingOrder.id)
         if (items.length > 0) {
           await createOrderItemBatch(
@@ -237,16 +406,20 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
           )
         }
       } else {
-        // Create new order
         const orderNo = await generateOrderNo()
         await createOrderWithItems(
           {
             order_no: orderNo,
-            party_name: partyName,
-            station: station || null,
-            agent: agent || null,
-            gst_number: gstNumber || null,
+            party_name: partyName.trim(),
+            station: station.trim() || null,
+            agent: agent.trim() || null,
+            gst_number: gstNumber.trim() || null,
             order_date: orderDate || null,
+            export_date: exportDate || null,
+            brand: brand.trim() || null,
+            product_name: productName.trim() || null,
+            notes: notes.trim() || null,
+            status: 'draft',
             total_amount: totalAmount,
           },
           items.map(i => ({
@@ -265,506 +438,627 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
       setShowForm(false)
       resetForm()
       await loadOrders()
-    } catch (error: any) {
-      console.error('Error saving order:', error)
-      alert(`Error: ${error?.message || 'Failed to save order'}`)
+    } catch (err: any) {
+      setFormError(err?.message || 'Failed to save order')
     } finally {
       setFormLoading(false)
     }
   }
 
-  const handleViewOrder = async (order: Order) => {
+  // Confirm order & trigger stock deduction
+  const handleExecuteConfirmation = async () => {
+    if (!confirmModalOrder) return
+    setConfirmLoading(true)
+
     try {
-      const orderItems = await fetchOrderItems(order.id)
-      setViewOrder({ order, items: orderItems })
-    } catch (error) {
-      console.error('Error loading order items:', error)
+      await confirmOrderAndDeductStock(
+        confirmModalOrder.id,
+        parseInt(deductLocationId, 10),
+        confirmStaffName.trim() || 'Staff'
+      )
+      setOrders(orders.map(o => (o.id === confirmModalOrder.id ? { ...o, status: 'confirmed' } : o)))
+      setConfirmModalOrder(null)
+      alert(`Order ${confirmModalOrder.order_no} confirmed! Stock inventory has been deducted.`)
+    } catch (err: any) {
+      alert(`Confirmation failed: ${err?.message || 'Error'}`)
+    } finally {
+      setConfirmLoading(false)
     }
   }
 
-  const handleDelete = async (id: number) => {
+  const handleCancelOrder = async (orderId: number) => {
     try {
-      await deleteOrder(id)
-      setOrders(orders.filter(o => o.id !== id))
+      await updateOrderStatus(orderId, 'cancelled')
+      setOrders(orders.map(o => (o.id === orderId ? { ...o, status: 'cancelled' } : o)))
+    } catch (err: any) {
+      alert(`Failed to cancel: ${err?.message || 'Error'}`)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!deleteConfirm) return
+    try {
+      await deleteOrder(deleteConfirm)
+      setOrders(orders.filter(o => o.id !== deleteConfirm))
       setDeleteConfirm(null)
-    } catch (error: any) {
-      console.error('Error deleting order:', error)
-      alert(`Error: ${error?.message || 'Failed to delete order'}`)
+    } catch (err: any) {
+      alert(`Error deleting order: ${err?.message || 'Error'}`)
     }
   }
 
-  const handleShareWhatsApp = (order: Order) => {
-    const domain = import.meta.env.VITE_PUBLISHED_DOMAIN || window.location.origin
-    const url = `${domain}/order/${order.order_no}`
-    const text = `Order ${order.order_no}\nParty: ${order.party_name}\nTotal: ${formatCurrency(order.total_amount)}\n\nView: ${url}`
-    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank')
-  }
-
-  const handleDownloadPDF = async (order: Order) => {
+  const handleDownloadPdf = async (ord: Order) => {
     try {
-      const { jsPDF } = await import('jspdf')
-
-      let orderItems = viewOrder?.items || []
-      if (!viewOrder || viewOrder.order.id !== order.id) {
-        try { orderItems = await fetchOrderItems(order.id) } catch { orderItems = [] }
-      }
-
-      const pdf = new jsPDF('p', 'mm', 'a4')
-      const pageWidth = 210
-      let y = 20
-
-      // Header
-      pdf.setFontSize(24)
-      pdf.setFont('helvetica', 'bold')
-      pdf.text('ORDER', 15, y)
-      pdf.setFontSize(12)
-      pdf.setTextColor(234, 88, 12) // orange
-      pdf.text(order.order_no, 15, y + 8)
-
-      pdf.setFontSize(16)
-      pdf.text('Rangoli Textiles', pageWidth - 15, y, { align: 'right' })
-      pdf.setTextColor(0, 0, 0)
-
-      y += 18
-      pdf.setDrawColor(200, 200, 200)
-      pdf.line(15, y, pageWidth - 15, y)
-      y += 10
-
-      // Party details
-      pdf.setFontSize(9)
-      pdf.setTextColor(130, 130, 130)
-      pdf.text('PARTY NAME', 15, y)
-      pdf.text('ORDER DATE', pageWidth / 2 + 10, y)
-      y += 5
-      pdf.setFontSize(13)
-      pdf.setTextColor(0, 0, 0)
-      pdf.setFont('helvetica', 'bold')
-      pdf.text(order.party_name, 15, y)
-      pdf.setFont('helvetica', 'normal')
-      pdf.setFontSize(11)
-      pdf.text(order.order_date ? formatDate(order.order_date) : '-', pageWidth / 2 + 10, y)
-      y += 8
-
-      if (order.station) {
-        pdf.setFontSize(9)
-        pdf.setTextColor(130, 130, 130)
-        pdf.text('STATION', 15, y)
-        y += 5
-        pdf.setFontSize(11)
-        pdf.setTextColor(0, 0, 0)
-        pdf.text(order.station, 15, y)
-        y += 7
-      }
-
-      if (order.agent) {
-        pdf.setFontSize(9)
-        pdf.setTextColor(130, 130, 130)
-        pdf.text('AGENT', pageWidth / 2 + 10, y - (order.station ? 12 : 0))
-        pdf.setFontSize(11)
-        pdf.setTextColor(0, 0, 0)
-        pdf.text(order.agent, pageWidth / 2 + 10, y - (order.station ? 7 : 0))
-      }
-
-      if (order.gst_number) {
-        pdf.setFontSize(9)
-        pdf.setTextColor(130, 130, 130)
-        pdf.text('GST NO', 15, y)
-        y += 5
-        pdf.setFontSize(11)
-        pdf.setTextColor(0, 0, 0)
-        pdf.text(order.gst_number, 15, y)
-        y += 7
-      }
-
-      y += 5
-      pdf.line(15, y, pageWidth - 15, y)
-      y += 8
-
-      // Table header
-      const cols = [15, 25, 80, 110, 135, 160]
-      pdf.setFontSize(9)
-      pdf.setFont('helvetica', 'bold')
-      pdf.setTextColor(80, 80, 80)
-      pdf.text('#', cols[0], y)
-      pdf.text('Design No', cols[1], y)
-      pdf.text('Rate/pc', cols[2], y)
-      pdf.text('Sets', cols[3], y)
-      pdf.text('Total Pcs', cols[4], y)
-      pdf.text('Amount', pageWidth - 15, y, { align: 'right' })
-      y += 3
-      pdf.line(15, y, pageWidth - 15, y)
-      y += 5
-
-      // Table rows
-      pdf.setFont('helvetica', 'normal')
-      pdf.setTextColor(0, 0, 0)
-      pdf.setFontSize(10)
-
-      orderItems.forEach((item, i) => {
-        if (y > 270) {
-          pdf.addPage()
-          y = 20
-        }
-        pdf.text(String(i + 1), cols[0], y)
-        pdf.text(item.design_no || '-', cols[1], y)
-        pdf.text(formatCurrency(item.rate || 0), cols[2], y)
-        pdf.text(String(item.sets), cols[3], y)
-        pdf.text(String(item.total_pcs), cols[4], y)
-        pdf.text(formatCurrency(item.line_total), pageWidth - 15, y, { align: 'right' })
-        y += 7
-      })
-
-      // Total
-      y += 3
-      pdf.setDrawColor(100, 100, 100)
-      pdf.line(15, y, pageWidth - 15, y)
-      y += 8
-      pdf.setFontSize(13)
-      pdf.setFont('helvetica', 'bold')
-      pdf.text('Grand Total', cols[4], y)
-      pdf.setTextColor(234, 88, 12)
-      pdf.text(formatCurrency(order.total_amount), pageWidth - 15, y, { align: 'right' })
-
-      // Footer
-      y += 20
-      pdf.setFontSize(9)
-      pdf.setTextColor(170, 170, 170)
-      pdf.setFont('helvetica', 'normal')
-      pdf.text('Thank you for your order! — Rangoli Textiles', pageWidth / 2, y, { align: 'center' })
-
-      pdf.save(`Order_${order.order_no}.pdf`)
-    } catch (err) {
-      console.error('Error generating PDF:', err)
-      alert('Failed to generate PDF. Please try again.')
+      const ordItems = await fetchOrderItems(ord.id)
+      const withProducts = await Promise.all(
+        ordItems.map(async item => {
+          const prod = products.find(p => p.design_no === item.design_no)
+          return { ...item, product: prod }
+        })
+      )
+      await downloadOrderPdf({ order: ord, items: withProducts })
+    } catch (err: any) {
+      alert(`PDF download failed: ${err?.message || 'Error'}`)
     }
   }
 
-  if (loading) {
-    return <div className="flex items-center justify-center py-10">Loading orders...</div>
-  }
+  // Filtered orders list
+  const filteredOrders = orders.filter(o => {
+    if (statusFilter !== 'all' && o.status !== statusFilter) return false
+    if (!searchQuery.trim()) return true
+    const q = searchQuery.toLowerCase()
+    return (
+      o.order_no.toLowerCase().includes(q) ||
+      o.party_name.toLowerCase().includes(q) ||
+      (o.station && o.station.toLowerCase().includes(q)) ||
+      (o.agent && o.agent.toLowerCase().includes(q)) ||
+      (o.gst_number && o.gst_number.toLowerCase().includes(q))
+    )
+  })
 
   return (
     <div className="space-y-6">
-      <div className="flex gap-3">
-        <Button onClick={openCreateForm} className="bg-orange-600 hover:bg-orange-700">
-          <Plus className="w-4 h-4 mr-2" />
-          Create Order
-        </Button>
+      {/* Top action and filter bar */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <div className="relative w-full sm:w-80">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Input
+              placeholder="Search by order #, party, station, agent..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 bg-slate-50 border-slate-200"
+            />
+          </div>
+          <Button onClick={openCreateForm} className="bg-slate-900 hover:bg-slate-800 text-white shrink-0">
+            <Plus className="w-4 h-4 mr-1.5" /> Create New Order
+          </Button>
+        </div>
+
+        {/* Status filters */}
+        <div className="flex items-center gap-2 pt-2 border-t border-slate-100 text-xs">
+          <span className="font-semibold text-slate-500 uppercase tracking-wider">Status:</span>
+          <button
+            onClick={() => setStatusFilter('all')}
+            className={`px-3 py-1 rounded-full font-medium transition-colors ${
+              statusFilter === 'all' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            All Orders ({orders.length})
+          </button>
+          <button
+            onClick={() => setStatusFilter('draft')}
+            className={`px-3 py-1 rounded-full font-medium transition-colors ${
+              statusFilter === 'draft' ? 'bg-amber-600 text-white' : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+            }`}
+          >
+            Drafts ({orders.filter(o => !o.status || o.status === 'draft').length})
+          </button>
+          <button
+            onClick={() => setStatusFilter('confirmed')}
+            className={`px-3 py-1 rounded-full font-medium transition-colors ${
+              statusFilter === 'confirmed' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+            }`}
+          >
+            Confirmed ({orders.filter(o => o.status === 'confirmed').length})
+          </button>
+          <button
+            onClick={() => setStatusFilter('cancelled')}
+            className={`px-3 py-1 rounded-full font-medium transition-colors ${
+              statusFilter === 'cancelled' ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+            }`}
+          >
+            Cancelled ({orders.filter(o => o.status === 'cancelled').length})
+          </button>
+        </div>
       </div>
 
-      {/* Orders List */}
-      <div className="border rounded-lg overflow-x-auto bg-white shadow-sm">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b">
-            <tr>
-              <th className="px-4 py-3 text-left font-medium">Order No</th>
-              <th className="px-4 py-3 text-left font-medium">Party</th>
-              <th className="px-4 py-3 text-left font-medium">Date</th>
-              <th className="px-4 py-3 text-left font-medium">Total</th>
-              <th className="px-4 py-3 text-left font-medium">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {orders.length === 0 ? (
+      {/* Orders Table */}
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 text-xs font-semibold uppercase tracking-wider">
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
-                  No orders yet
-                </td>
+                <th className="px-4 py-3 text-left">Order No</th>
+                <th className="px-4 py-3 text-left">Party Details</th>
+                <th className="px-4 py-3 text-left">Station & Agent</th>
+                <th className="px-4 py-3 text-left">Date</th>
+                <th className="px-4 py-3 text-right">Amount</th>
+                <th className="px-4 py-3 text-center">Status</th>
+                <th className="px-4 py-3 text-right">Actions</th>
               </tr>
-            ) : (
-              orders.map(order => (
-                <tr key={order.id} className="hover:bg-orange-50/50">
-                  <td className="px-4 py-3 font-medium text-orange-700">{order.order_no}</td>
-                  <td className="px-4 py-3">{order.party_name}</td>
-                  <td className="px-4 py-3 text-sm">{order.order_date ? formatDate(order.order_date) : '-'}</td>
-                  <td className="px-4 py-3 font-medium">{formatCurrency(order.total_amount)}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => handleViewOrder(order)}>
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                      {!isStaff && (
-                        <Button variant="ghost" size="sm" onClick={() => openEditForm(order)}>
-                          <Edit2 className="w-4 h-4 text-blue-500" />
-                        </Button>
-                      )}
-                      <Button variant="ghost" size="sm" onClick={() => handleShareWhatsApp(order)}>
-                        <Share2 className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => handleDownloadPDF(order)}>
-                        <Download className="w-4 h-4" />
-                      </Button>
-                      {!isStaff && (
-                        <Button variant="ghost" size="sm" onClick={() => setDeleteConfirm(order.id)}>
-                          <Trash2 className="w-4 h-4 text-red-500" />
-                        </Button>
-                      )}
-                    </div>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="py-12 text-center text-slate-400">Loading orders...</td>
+                </tr>
+              ) : filteredOrders.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-12 text-center text-slate-400">
+                    No orders found. Click "Create New Order" to start.
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                filteredOrders.map((ord) => (
+                  <tr key={ord.id} className="hover:bg-slate-50/70 transition-colors">
+                    <td className="px-4 py-3">
+                      <a
+                        href={`/order/${ord.order_no}`}
+                        className="font-mono font-bold text-orange-600 hover:underline block"
+                      >
+                        {ord.order_no}
+                      </a>
+                    </td>
+                    <td className="px-4 py-3">
+                      <p className="font-bold text-slate-900">{ord.party_name}</p>
+                      {ord.gst_number && <p className="font-mono text-xs text-slate-400">{ord.gst_number}</p>}
+                    </td>
+                    <td className="px-4 py-3">
+                      <p className="text-slate-800 font-medium">{ord.station || '-'}</p>
+                      {ord.agent && <p className="text-xs text-slate-500">Ag: {ord.agent}</p>}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600 text-xs">
+                      {formatDate(ord.order_date || ord.created_at)}
+                    </td>
+                    <td className="px-4 py-3 text-right font-bold text-slate-900">
+                      {formatCurrency(ord.total_amount)}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      {ord.status === 'confirmed' ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                          <CheckCircle2 className="w-3 h-3" /> Confirmed
+                        </span>
+                      ) : ord.status === 'cancelled' ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
+                          <AlertCircle className="w-3 h-3" /> Cancelled
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+                          <Clock className="w-3 h-3" /> Draft
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        {ord.status !== 'confirmed' && ord.status !== 'cancelled' && (
+                          <Button
+                            size="sm"
+                            onClick={() => setConfirmModalOrder(ord)}
+                            className="h-8 px-2.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+                          >
+                            Confirm
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Download Order PDF"
+                          onClick={() => handleDownloadPdf(ord)}
+                          className="h-8 w-8 p-0 text-slate-600 hover:text-slate-900"
+                        >
+                          <Download className="w-4 h-4 text-orange-600" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Duplicate Order"
+                          onClick={() => handleDuplicate(ord)}
+                          className="h-8 w-8 p-0 text-slate-600 hover:text-slate-900"
+                        >
+                          <Copy className="w-4 h-4 text-blue-600" />
+                        </Button>
+                        {!isStaff && ord.status !== 'confirmed' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title="Edit Order"
+                            onClick={() => openEditForm(ord)}
+                            className="h-8 w-8 p-0 text-slate-600 hover:text-slate-900"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </Button>
+                        )}
+                        {!isStaff && ord.status === 'draft' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title="Cancel Order"
+                            onClick={() => handleCancelOrder(ord.id)}
+                            className="h-8 w-8 p-0 text-slate-400 hover:text-rose-600"
+                          >
+                            <Ban className="w-4 h-4" />
+                          </Button>
+                        )}
+                        {!isStaff && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title="Delete Order"
+                            onClick={() => setDeleteConfirm(ord.id)}
+                            className="h-8 w-8 p-0 text-rose-500 hover:text-rose-700"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      {/* Create/Edit Order Dialog */}
-      <Dialog open={showForm} onOpenChange={(open) => { if (!open) { setShowForm(false); setShowScanner(false); resetForm() } }}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+      {/* Create / Edit Order Modal */}
+      <Dialog open={showForm} onOpenChange={setShowForm}>
+        <DialogContent className="sm:max-w-[760px] max-h-[92vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingOrder ? `Edit Order ${editingOrder.order_no}` : 'Create New Order'}</DialogTitle>
+            <DialogTitle className="text-xl font-bold">
+              {editingOrder ? `Edit Order — ${editingOrder.order_no}` : 'Create Wholesale Order'}
+            </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            {/* Party Details */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
+
+          <div className="space-y-4 pt-2">
+            {formError && (
+              <p className="text-xs font-semibold text-rose-600 bg-rose-50 p-2.5 rounded border border-rose-200">
+                {formError}
+              </p>
+            )}
+
+            {/* Header / Party Details */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-3.5 rounded-lg border border-slate-200">
+              <div className="space-y-1 relative">
                 <Label>Party Name *</Label>
-                <Input value={partyName} onChange={(e) => setPartyName(e.target.value)} placeholder="Party name" />
-              </div>
-              <div className="space-y-1">
-                <Label>Station</Label>
-                <Input value={station} onChange={(e) => setStation(e.target.value)} placeholder="Station" />
-              </div>
-              <div className="space-y-1">
-                <Label>Agent</Label>
-                <Input value={agent} onChange={(e) => setAgent(e.target.value)} placeholder="Agent" />
-              </div>
-              <div className="space-y-1">
-                <Label>GST No</Label>
-                <Input value={gstNumber} onChange={(e) => setGstNumber(e.target.value)} placeholder="GST Number" />
-              </div>
-              <div className="space-y-1">
-                <Label>Date</Label>
-                <Input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} />
-              </div>
-            </div>
-
-            <hr />
-
-            {/* Item Entry */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-sm">Items</h3>
-                <Button
-                  variant={showScanner ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setShowScanner(!showScanner)}
-                  className={showScanner ? 'bg-green-600 hover:bg-green-700' : ''}
-                >
-                  {showScanner ? (
-                    <><Zap className="w-4 h-4 mr-1" /> Scanning...</>
-                  ) : (
-                    <><QrCode className="w-4 h-4 mr-1" /> Scan QR</>
-                  )}
-                </Button>
-              </div>
-
-              {showScanner && (
-                <div className="border-2 border-green-200 rounded-lg p-2 bg-green-50/50">
-                  <div id="order-qr-reader" className="w-full max-w-xs mx-auto" />
-                  <div className="flex items-center justify-center gap-2 mt-2">
-                    {scannerStatus === 'scanning' && (
-                      <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
-                        <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                        Ultra-fast scanning active • Scan adds items automatically
-                      </span>
-                    )}
-                    {scannerStatus === 'starting' && (
-                      <span className="text-xs text-gray-500">Starting camera...</span>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Manual Search */}
-              <div className="relative">
-                <div className="flex items-center gap-2 border rounded-lg px-3">
-                  <Search className="w-4 h-4 text-gray-400" />
-                  <Input
-                    placeholder="Search design number to add..."
-                    value={itemSearch}
-                    onChange={(e) => handleSearchItem(e.target.value)}
-                    className="border-0 shadow-none focus-visible:ring-0"
-                  />
-                </div>
-                {searchResults.length > 0 && (
-                  <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto">
-                    {searchResults.map(p => (
-                      <button
+                <Input
+                  value={partyName}
+                  onChange={(e) => handlePartyChange(e.target.value)}
+                  placeholder="e.g. Radhika Sarees"
+                  required
+                />
+                {showPartySuggestions && (
+                  <div className="absolute top-full left-0 right-0 z-50 bg-white border border-slate-200 rounded-lg shadow-lg mt-1 overflow-hidden">
+                    {partySuggestions.map(p => (
+                      <div
                         key={p.id}
-                        onClick={() => addItemFromProduct(p)}
-                        className="w-full text-left px-3 py-2 hover:bg-orange-50 text-sm flex items-center gap-2"
+                        onClick={() => selectParty(p)}
+                        className="p-2 hover:bg-slate-100 cursor-pointer text-xs flex justify-between"
                       >
-                        {p.image_url && <img src={p.image_url} alt="" className="w-6 h-6 rounded object-cover" />}
-                        <span className="font-medium">{p.design_no}</span>
-                        <span className="text-gray-400">₹{p.rate || 0}/pc</span>
-                      </button>
+                        <span className="font-bold text-slate-900">{p.name}</span>
+                        <span className="text-slate-500">{p.station}</span>
+                      </div>
                     ))}
                   </div>
                 )}
               </div>
 
-              {/* Items Table */}
-              {items.length > 0 && (
-                <div className="border rounded-lg overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-3 py-2 text-left">D.No</th>
-                        <th className="px-3 py-2 text-center">Rate/pc</th>
-                        <th className="px-3 py-2 text-center">Sets</th>
-                        <th className="px-3 py-2 text-center">Total Pcs</th>
-                        <th className="px-3 py-2 text-right">Amount</th>
-                        <th className="px-3 py-2 w-8"></th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {items.map((item, idx) => (
-                        <tr key={idx}>
-                          <td className="px-3 py-2">
-                            <div className="flex items-center gap-2">
-                              {item.thumbnail && (
-                                <img src={item.thumbnail} alt="" className="w-8 h-8 rounded object-cover" />
-                              )}
-                              <span className="font-medium">{item.design_no}</span>
-                            </div>
-                          </td>
-                          <td className="px-3 py-2 text-center">
-                            <Input
-                              type="number"
-                              value={item.rate}
-                              onChange={(e) => updateItem(idx, 'rate', parseFloat(e.target.value) || 0)}
-                              className="w-20 text-center mx-auto"
-                              min="0"
-                            />
-                          </td>
-                          <td className="px-3 py-2 text-center">
-                            <Input
-                              type="number"
-                              value={item.sets}
-                              onChange={(e) => updateItem(idx, 'sets', parseInt(e.target.value) || 0)}
-                              className="w-16 text-center mx-auto"
-                              min="1"
-                            />
-                          </td>
-                          <td className="px-3 py-2 text-center text-gray-500">{item.total_pcs}</td>
-                          <td className="px-3 py-2 text-right font-medium">{formatCurrency(item.line_total)}</td>
-                          <td className="px-3 py-2">
-                            <button onClick={() => removeItem(idx)} className="text-red-400 hover:text-red-600">
-                              <X className="w-4 h-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot className="bg-gray-50 font-semibold">
-                      <tr>
-                        <td colSpan={4} className="px-3 py-2 text-right">Total</td>
-                        <td className="px-3 py-2 text-right text-orange-700">{formatCurrency(totalAmount)}</td>
-                        <td></td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              )}
+              <div className="space-y-1">
+                <Label>Station / City</Label>
+                <Input
+                  value={station}
+                  onChange={(e) => setStation(e.target.value)}
+                  placeholder="e.g. Surat"
+                />
+              </div>
+
+              <div className="space-y-1 relative">
+                <Label>Agent</Label>
+                <Input
+                  value={agent}
+                  onChange={(e) => handleAgentChange(e.target.value)}
+                  placeholder="e.g. Ramesh Bhai"
+                />
+                {showAgentSuggestions && (
+                  <div className="absolute top-full left-0 right-0 z-50 bg-white border border-slate-200 rounded-lg shadow-lg mt-1 overflow-hidden">
+                    {agentSuggestions.map(a => (
+                      <div
+                        key={a.id}
+                        onClick={() => selectAgent(a)}
+                        className="p-2 hover:bg-slate-100 cursor-pointer text-xs"
+                      >
+                        <span className="font-bold text-slate-900">{a.name}</span>
+                        {a.station && <span className="text-slate-400 ml-1">({a.station})</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1">
+                <Label>GST Number</Label>
+                <Input
+                  value={gstNumber}
+                  onChange={(e) => setGstNumber(e.target.value.toUpperCase())}
+                  placeholder="24AAAAA0000A1Z5"
+                  className="font-mono text-xs"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label>Order Date</Label>
+                <Input
+                  type="date"
+                  value={orderDate}
+                  onChange={(e) => setOrderDate(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label>Export Date</Label>
+                <Input
+                  type="date"
+                  value={exportDate}
+                  onChange={(e) => setExportDate(e.target.value)}
+                />
+              </div>
             </div>
 
-            <Button
-              onClick={handleSaveOrder}
-              className="w-full bg-orange-600 hover:bg-orange-700"
-              disabled={formLoading || !partyName.trim() || items.length === 0}
-            >
-              {formLoading ? 'Saving...' : editingOrder
-                ? `Update Order (${formatCurrency(totalAmount)})`
-                : `Create Order (${formatCurrency(totalAmount)})`
-              }
-            </Button>
+            {/* Design Item Entry Bar */}
+            <div className="bg-slate-900 text-white p-3.5 rounded-lg space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                  Add Products to Order
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowScanner(!showScanner)}
+                  className={`h-7 text-xs ${showScanner ? 'bg-orange-500 text-white border-orange-500' : 'bg-transparent text-white border-slate-700'}`}
+                >
+                  <Camera className="w-3.5 h-3.5 mr-1" />
+                  {showScanner ? 'Close Camera' : 'Camera QR Scanner'}
+                </Button>
+              </div>
+
+              {/* QR Scanner Component */}
+              {showScanner && (
+                <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-2">
+                  <div id="order-qr-reader" className="w-full max-w-xs mx-auto rounded overflow-hidden aspect-video bg-black" />
+                  <p className="text-[11px] text-center text-slate-400">
+                    Point camera at product QR. Repeated scans automatically increase set quantities.
+                  </p>
+                </div>
+              )}
+
+              {/* Manual Search */}
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Input
+                  placeholder="Type design number to search and add..."
+                  value={itemSearch}
+                  onChange={(e) => handleSearchItem(e.target.value)}
+                  className="pl-9 bg-slate-800 border-slate-700 text-white placeholder:text-slate-400"
+                />
+
+                {searchResults.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-50 bg-white text-slate-900 border border-slate-200 rounded-lg shadow-xl mt-1 overflow-hidden divide-y">
+                    {searchResults.map(p => (
+                      <div
+                        key={p.id}
+                        onClick={() => addItemFromProduct(p)}
+                        className="p-2.5 hover:bg-orange-50 cursor-pointer flex items-center justify-between text-xs transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          {p.image_url && (
+                            <img src={p.image_url} alt="" className="w-8 h-8 rounded object-cover" />
+                          )}
+                          <div>
+                            <p className="font-extrabold text-slate-900">{p.design_no}</p>
+                            <p className="text-slate-500 text-[10px]">{p.brand} • {p.fabric}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold text-orange-600">{formatCurrency(p.rate || 0)}/pc</p>
+                          <p className="text-slate-400 text-[10px]">{p.pcs_per_set || 1} pcs/set</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Order Items Table */}
+            <div className="border border-slate-200 rounded-lg overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-50 border-b text-slate-700 font-semibold uppercase tracking-wider">
+                  <tr>
+                    <th className="py-2.5 px-3 text-left">Design No</th>
+                    <th className="py-2.5 px-3 text-right w-24">Rate (₹)</th>
+                    <th className="py-2.5 px-3 text-center w-20">Sets</th>
+                    <th className="py-2.5 px-3 text-center w-20">Pcs/Set</th>
+                    <th className="py-2.5 px-3 text-center w-20">Total Pcs</th>
+                    <th className="py-2.5 px-3 text-right w-28">Amount</th>
+                    <th className="py-2.5 px-2 text-center w-10" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {items.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-slate-400">
+                        No designs added. Scan QR or type design number above.
+                      </td>
+                    </tr>
+                  ) : (
+                    items.map((item, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50">
+                        <td className="py-2 px-3 font-bold text-slate-900">
+                          <div className="flex items-center gap-1.5">
+                            {item.thumbnail && (
+                              <img src={item.thumbnail} alt="" className="w-6 h-6 rounded object-cover" />
+                            )}
+                            {item.design_no}
+                          </div>
+                        </td>
+                        <td className="py-2 px-3 text-right">
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={item.rate}
+                            onChange={(e) => updateItem(idx, 'rate', parseFloat(e.target.value) || 0)}
+                            className="h-7 text-right text-xs p-1"
+                          />
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          <Input
+                            type="number"
+                            min="1"
+                            value={item.sets}
+                            onChange={(e) => updateItem(idx, 'sets', parseInt(e.target.value) || 0)}
+                            className="h-7 text-center text-xs p-1 font-bold text-slate-900"
+                          />
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          <Input
+                            type="number"
+                            min="1"
+                            value={item.pcs_per_set}
+                            onChange={(e) => updateItem(idx, 'pcs_per_set', parseInt(e.target.value) || 1)}
+                            className="h-7 text-center text-xs p-1"
+                          />
+                        </td>
+                        <td className="py-2 px-3 text-center font-bold text-slate-700 font-mono">
+                          {item.total_pcs}
+                        </td>
+                        <td className="py-2 px-3 text-right font-bold text-slate-900">
+                          {formatCurrency(item.line_total)}
+                        </td>
+                        <td className="py-2 px-2 text-center">
+                          <button
+                            type="button"
+                            onClick={() => removeItem(idx)}
+                            className="text-rose-500 hover:text-rose-700 p-1"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Calculations Summary Box */}
+            <div className="flex justify-between items-center bg-slate-50 p-3.5 rounded-lg border border-slate-200">
+              <div className="flex gap-6 text-xs text-slate-600 font-medium">
+                <span>Total Items: <strong className="text-slate-900">{items.length}</strong></span>
+                <span>Total Sets: <strong className="text-slate-900">{totalSets}</strong></span>
+                <span>Total Pieces: <strong className="text-slate-900">{totalPieces}</strong></span>
+              </div>
+              <div className="text-right">
+                <span className="text-xs font-semibold text-slate-400 block uppercase tracking-wider">Total Amount</span>
+                <span className="text-2xl font-black text-orange-600">{formatCurrency(totalAmount)}</span>
+              </div>
+            </div>
+
+            {/* Form actions */}
+            <div className="flex justify-end gap-2 pt-3 border-t">
+              <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleSaveOrder}
+                disabled={formLoading || items.length === 0}
+                className="bg-slate-900 hover:bg-slate-800 text-white"
+              >
+                {formLoading ? 'Saving...' : editingOrder ? 'Update Order' : 'Save Draft Order'}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* View Order Dialog */}
-      <Dialog open={viewOrder !== null} onOpenChange={() => setViewOrder(null)}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-          {viewOrder && (
-            <>
-              <DialogHeader>
-                <DialogTitle>Order {viewOrder.order.order_no}</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <p><span className="text-gray-500">Party:</span> {viewOrder.order.party_name}</p>
-                  <p><span className="text-gray-500">Station:</span> {viewOrder.order.station || '-'}</p>
-                  <p><span className="text-gray-500">Agent:</span> {viewOrder.order.agent || '-'}</p>
-                  <p><span className="text-gray-500">GST:</span> {viewOrder.order.gst_number || '-'}</p>
-                  <p><span className="text-gray-500">Date:</span> {viewOrder.order.order_date ? formatDate(viewOrder.order.order_date) : '-'}</p>
-                </div>
+      {/* Confirmation & Stock Deduction Modal */}
+      <Dialog open={confirmModalOrder !== null} onOpenChange={() => setConfirmModalOrder(null)}>
+        <DialogContent className="sm:max-w-[440px]">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              Confirm Order & Deduct Stock
+            </DialogTitle>
+          </DialogHeader>
 
-                <div className="border rounded-lg overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-3 py-2 text-left">D.No</th>
-                        <th className="px-3 py-2 text-center">Rate/pc</th>
-                        <th className="px-3 py-2 text-center">Sets</th>
-                        <th className="px-3 py-2 text-center">Total Pcs</th>
-                        <th className="px-3 py-2 text-right">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {viewOrder.items.map(item => (
-                        <tr key={item.id}>
-                          <td className="px-3 py-2 font-medium">{item.design_no}</td>
-                          <td className="px-3 py-2 text-center">{formatCurrency(item.rate || 0)}</td>
-                          <td className="px-3 py-2 text-center">{item.sets}</td>
-                          <td className="px-3 py-2 text-center">{item.total_pcs}</td>
-                          <td className="px-3 py-2 text-right">{formatCurrency(item.line_total)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot className="bg-gray-50 font-semibold">
-                      <tr>
-                        <td colSpan={4} className="px-3 py-2 text-right">Total</td>
-                        <td className="px-3 py-2 text-right text-orange-700">{formatCurrency(viewOrder.order.total_amount)}</td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
+          {confirmModalOrder && (
+            <div className="space-y-4 pt-2 text-sm">
+              <p className="text-slate-600">
+                Confirming Order <strong>{confirmModalOrder.order_no}</strong> for <strong>{confirmModalOrder.party_name}</strong> will lock the pricing and atomically deduct inventory quantities.
+              </p>
 
-                <div className="flex gap-2">
-                  {!isStaff && (
-                    <Button variant="outline" onClick={() => { setViewOrder(null); openEditForm(viewOrder.order) }}>
-                      <Edit2 className="w-4 h-4 mr-1" /> Edit
-                    </Button>
-                  )}
-                  <Button variant="outline" onClick={() => handleShareWhatsApp(viewOrder.order)}>
-                    <Share2 className="w-4 h-4 mr-1" /> WhatsApp
-                  </Button>
-                  <Button variant="outline" onClick={() => handleDownloadPDF(viewOrder.order)}>
-                    <Download className="w-4 h-4 mr-1" /> PDF
-                  </Button>
-                </div>
+              <div className="space-y-1.5">
+                <Label>Deduct Inventory From Location *</Label>
+                <select
+                  value={deductLocationId}
+                  onChange={(e) => setDeductLocationId(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-md p-2 text-sm font-medium"
+                >
+                  {locations.map(l => (
+                    <option key={l.id} value={String(l.id)}>{l.name}</option>
+                  ))}
+                </select>
               </div>
-            </>
+
+              <div className="space-y-1.5">
+                <Label>Staff Authorizing</Label>
+                <Input
+                  value={confirmStaffName}
+                  onChange={(e) => setConfirmStaffName(e.target.value)}
+                  placeholder="Staff member name"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t">
+                <Button variant="outline" onClick={() => setConfirmModalOrder(null)}>
+                  Keep Draft
+                </Button>
+                <Button
+                  onClick={handleExecuteConfirmation}
+                  disabled={confirmLoading}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+                >
+                  {confirmLoading ? 'Processing Deduction...' : 'Confirm & Deduct Stock'}
+                </Button>
+              </div>
+            </div>
           )}
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirm */}
-      <AlertDialog open={deleteConfirm !== null}>
+      {/* Delete Confirmation */}
+      <AlertDialog open={deleteConfirm !== null} onOpenChange={() => setDeleteConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Order</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure? This will permanently delete this order and all its items.
+              Are you sure you want to delete this order? All associated line items will be removed.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="flex gap-4">
-            <AlertDialogCancel onClick={() => setDeleteConfirm(null)}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => { if (deleteConfirm) handleDelete(deleteConfirm) }}
-              className="bg-red-600 hover:bg-red-700"
-            >
+          <div className="flex justify-end gap-2">
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-rose-600 hover:bg-rose-700">
               Delete
             </AlertDialogAction>
           </div>
