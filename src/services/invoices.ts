@@ -1,5 +1,5 @@
 import supabase from './supabase'
-import type { Invoice, InvoiceItem } from '@/types'
+import type { Invoice, InvoiceItem, PublicInvoice } from '@/types'
 
 // Invoices CRUD
 export async function fetchInvoices(limit = 100) {
@@ -24,43 +24,19 @@ export async function fetchInvoice(invoiceNo: string) {
   return data as Invoice
 }
 
-export async function fetchPublicInvoice(slug: string = 'rangoli', invoiceNo: string): Promise<import('@/types').PublicInvoice> {
-  try {
-    const { data, error } = await supabase.rpc('get_public_invoice', {
-      p_slug: slug,
-      p_invoice_no: invoiceNo,
-    })
+export async function fetchPublicInvoice(slug: string = 'rangoli', invoiceNo: string): Promise<PublicInvoice> {
+  const { data, error } = await supabase.rpc('get_public_invoice', {
+    p_slug: slug,
+    p_invoice_no: invoiceNo,
+  })
 
-    if (!error && data) {
-      return data as import('@/types').PublicInvoice
-    }
-  } catch (err) {
-    console.warn('get_public_invoice RPC failed, falling back to direct queries:', err)
+  if (error) throw error
+  if (!data) {
+    throw new Error('Invoice not found')
   }
 
-  // Graceful fallback
-  const inv = await fetchInvoice(invoiceNo)
-  const items = await fetchInvoiceItems(inv.id)
-  return {
-    invoice_no: inv.invoice_no,
-    party_name: inv.party_name,
-    export_date: inv.export_date,
-    total_amount: inv.total_amount,
-    created_at: inv.created_at,
-    business_name: 'Rangoli Textiles',
-    business_slug: slug,
-    items: items.map(item => ({
-      id: item.id,
-      design_no: item.design_no || '',
-      rate: item.rate || 0,
-      sets: item.sets,
-      pcs_per_set: item.pcs_per_set,
-      total_pcs: item.total_pcs,
-      line_total: item.line_total,
-    }))
-  }
+  return data as PublicInvoice
 }
-
 
 export async function createInvoice(invoice: Omit<Invoice, 'id' | 'created_at' | 'updated_at'>) {
   const { data, error } = await supabase

@@ -8,10 +8,13 @@ interface AuthContextType {
   user: User | null
   session: Session | null
   membership: Membership | null
+  memberships: Membership[]
   business: Business | null
   role: UserRole | null
   isOwner: boolean
   isStaff: boolean
+  hasMultipleMemberships: boolean
+  membershipError: string | null
   loading: boolean
   signIn: (email: string, pass: string) => Promise<{ error: Error | null; role?: UserRole | null }>
   signOut: () => Promise<void>
@@ -24,41 +27,65 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [user, setUser] = useState<User | null>(null)
   const [membership, setMembership] = useState<Membership | null>(null)
+  const [memberships, setMemberships] = useState<Membership[]>([])
   const [business, setBusiness] = useState<Business | null>(null)
+  const [membershipError, setMembershipError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+
+  const clearMembershipState = () => {
+    setMembership(null)
+    setMemberships([])
+    setBusiness(null)
+    setMembershipError(null)
+  }
 
   const loadMembership = async (userId: string): Promise<UserRole | null> => {
     try {
-      // 1. Fetch user membership
-      const { data: memberData, error: memberErr } = await supabase
+      const { data: memberRows, error: memberErr } = await supabase
         .from('memberships')
         .select('*, business:businesses(*)')
         .eq('user_id', userId)
-        .limit(1)
-        .maybeSingle()
+        .order('business_id', { ascending: true })
 
-      if (!memberErr && memberData) {
-        const mem = memberData as Membership
-        setMembership(mem)
-        if (memberData.business) {
-          setBusiness(memberData.business as Business)
-        }
-        return mem.role
+      if (memberErr) {
+        setMembership(null)
+        setMemberships([])
+        setBusiness(null)
+        setMembershipError(memberErr.message || 'Unable to verify business membership.')
+        return null
       }
 
-      // If no membership found, check if a default business exists and fallback
-      const { data: defaultBiz } = await supabase
-        .from('businesses')
-        .select('*')
-        .eq('slug', 'rangoli')
-        .maybeSingle()
+      const rows = (memberRows || []) as Membership[]
+      setMemberships(rows)
 
-      if (defaultBiz) {
-        setBusiness(defaultBiz as Business)
+      if (rows.length === 0) {
+        setMembership(null)
+        setBusiness(null)
+        setMembershipError('No business membership found for this account.')
+        return null
       }
-      return null
-    } catch (err) {
+
+      // Consistent with database public.current_business_id(), which returns NULL when COUNT(*) <> 1
+      if (rows.length > 1) {
+        setMembership(null)
+        setBusiness(null)
+        setMembershipError(
+          'Multiple business memberships detected for this account. Ambiguous tenant selection is not permitted; please ensure a single active business membership.'
+        )
+        return null
+      }
+
+      const activeMembership = rows[0]
+      setMembership(activeMembership)
+      setBusiness((activeMembership.business as Business) ?? null)
+      setMembershipError(null)
+      return activeMembership.role
+    } catch (err: any) {
       console.warn('Could not load membership:', err)
+      setMembership(null)
+      setMemberships([])
+      setBusiness(null)
+      setMembershipError(err?.message || 'Unable to load business membership.')
       return null
     }
   }
@@ -71,6 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (session?.user) {
         loadMembership(session.user.id).finally(() => setLoading(false))
       } else {
+        clearMembershipState()
         setLoading(false)
       }
     })
@@ -84,8 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (newSession?.user) {
         await loadMembership(newSession.user.id)
       } else {
-        setMembership(null)
-        setBusiness(null)
+        clearMembershipState()
       }
       setLoading(false)
     })
@@ -101,20 +128,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password: pass,
     })
 
+    if (error) {
+      return { error: new Error(error.message), role: null }
+    }
+
     let resolvedRole: UserRole | null = null
-    if (!error && data.user) {
+    if (data.user) {
       resolvedRole = await loadMembership(data.user.id)
     }
 
-    return { error: error ? new Error(error.message) : null, role: resolvedRole }
+    return { error: null, role: resolvedRole }
   }
 
   const signOut = async () => {
     await supabase.auth.signOut()
     setSession(null)
     setUser(null)
-    setMembership(null)
-    setBusiness(null)
+    clearMembershipState()
   }
 
   const refreshMembership = async () => {
@@ -123,9 +153,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const hasMultipleMemberships = memberships.length > 1
   const role: UserRole | null = membership?.role || null
-  const isOwner = role === 'owner'
-  const isStaff = role === 'staff' || role === 'owner'
+  const isOwner = role === 'owner' && !hasMultipleMemberships
+  const isStaff = (role === 'staff' || role === 'owner') && !hasMultipleMemberships
 
   return (
     <AuthContext.Provider
@@ -133,10 +164,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         session,
         membership,
+        memberships,
         business,
         role,
         isOwner,
         isStaff,
+        hasMultipleMemberships,
+        membershipError,
         loading,
         signIn,
         signOut,

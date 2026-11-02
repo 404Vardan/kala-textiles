@@ -54,30 +54,20 @@ export async function createPublicInquiry(params: {
   message?: string
 }) {
   const { slug = 'rangoli', customerName, phone, designNo, message } = params
-  try {
-    const { data, error } = await supabase.rpc('create_public_inquiry', {
-      p_slug: slug,
-      p_customer_name: customerName,
-      p_phone: phone,
-      p_design_no: designNo || null,
-      p_message: message || null,
-    })
+  const { data, error } = await supabase.rpc('create_public_inquiry', {
+    p_slug: slug,
+    p_customer_name: customerName,
+    p_phone: phone,
+    p_design_no: designNo || null,
+    p_message: message || null,
+  })
 
-    if (!error && data) {
-      return data
-    }
-  } catch (err) {
-    console.warn('create_public_inquiry RPC failed, falling back to direct insert:', err)
+  if (error) throw error
+  if (!data) {
+    throw new Error('Failed to submit inquiry')
   }
 
-  // Graceful fallback
-  return createInquiry({
-    customer_name: customerName,
-    phone,
-    design_no: designNo,
-    message,
-    status: 'pending',
-  })
+  return data
 }
 
 export async function updateInquiry(id: number, updates: Partial<Inquiry>) {

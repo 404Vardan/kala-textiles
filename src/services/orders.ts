@@ -50,49 +50,17 @@ export async function fetchOrderByNo(orderNo: string): Promise<Order> {
 }
 
 export async function fetchPublicOrder(slug: string = 'rangoli', orderNo: string): Promise<import('@/types').PublicOrder> {
-  try {
-    const { data, error } = await supabase.rpc('get_public_order', {
-      p_slug: slug,
-      p_order_no: orderNo,
-    })
+  const { data, error } = await supabase.rpc('get_public_order', {
+    p_slug: slug,
+    p_order_no: orderNo,
+  })
 
-    if (!error && data) {
-      return data as import('@/types').PublicOrder
-    }
-  } catch (err) {
-    console.warn('get_public_order RPC failed, falling back to direct queries:', err)
+  if (error) throw error
+  if (!data) {
+    throw new Error('Order not found')
   }
 
-  // Graceful fallback
-  const order = await fetchOrderByNo(orderNo)
-  const items = await fetchOrderItems(order.id)
-  return {
-    order_no: order.order_no,
-    party_name: order.party_name,
-    station: order.station,
-    agent: order.agent,
-    gst_number: order.gst_number,
-    order_date: order.order_date,
-    export_date: order.export_date,
-    brand: order.brand,
-    product_name: order.product_name,
-    notes: order.notes,
-    status: order.status,
-    total_amount: order.total_amount,
-    created_at: order.created_at,
-    confirmed_at: order.confirmed_at,
-    business_name: 'Rangoli Textiles',
-    business_slug: slug,
-    items: items.map(item => ({
-      id: item.id,
-      design_no: item.design_no || '',
-      rate: item.rate || 0,
-      sets: item.sets,
-      pcs_per_set: item.pcs_per_set,
-      total_pcs: item.total_pcs,
-      line_total: item.line_total,
-    }))
-  }
+  return data as import('@/types').PublicOrder
 }
 
 export async function generateOrderNo(): Promise<string> {

@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import type { UserRole } from '@/types'
-import { ShieldAlert, ArrowLeft } from 'lucide-react'
+import { ShieldAlert, ArrowLeft, LogOut } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 interface ProtectedRouteProps {
@@ -11,7 +11,16 @@ interface ProtectedRouteProps {
 }
 
 export default function ProtectedRoute({ children, requiredRole = 'staff' }: ProtectedRouteProps) {
-  const { user, role, loading, isOwner, isStaff } = useAuth()
+  const {
+    user,
+    role,
+    loading,
+    isOwner,
+    isStaff,
+    hasMultipleMemberships,
+    membershipError,
+    signOut,
+  } = useAuth()
   const location = useLocation()
 
   if (loading) {
@@ -30,28 +39,45 @@ export default function ProtectedRoute({ children, requiredRole = 'staff' }: Pro
     return <Navigate to={`/login?returnUrl=${encodeURIComponent(location.pathname + location.search)}`} replace />
   }
 
-  // Role verification: 'owner' role is required, or 'staff' role is required
+  // Role and single-tenant membership verification
   if ((requiredRole === 'owner' && !isOwner) || (requiredRole === 'staff' && !isStaff)) {
+    const title = hasMultipleMemberships
+      ? 'Multiple Business Memberships Detected'
+      : !role
+      ? 'Business Membership Required'
+      : 'Administrative Access Required'
+
+    const description = hasMultipleMemberships
+      ? membershipError ||
+        'Your account is linked to multiple businesses. Database tenancy requires a single unambiguous business membership.'
+      : !role
+      ? membershipError ||
+        'Your account does not have an active staff or owner membership for this business.'
+      : `Your account is registered with the ${role} role. Access to the executive management dashboard is restricted to Business Owners.`
+
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 px-4 text-center">
         <div className="w-16 h-16 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mb-4">
           <ShieldAlert className="w-8 h-8" />
         </div>
-        <h1 className="text-2xl font-black text-slate-900">
-          {requiredRole === 'owner' ? 'Administrative Access Required' : 'Business Membership Required'}
-        </h1>
-        <p className="text-slate-500 text-sm max-w-md mt-2 mb-6">
-          {requiredRole === 'owner'
-            ? `Your account is registered with the ${role || 'unassigned'} role. Access to the executive management dashboard is restricted to Business Owners.`
-            : 'Your account does not have an active staff or owner membership for this business.'}
-        </p>
-        <div className="flex gap-3">
+        <h1 className="text-2xl font-black text-slate-900">{title}</h1>
+        <p className="text-slate-500 text-sm max-w-md mt-2 mb-6">{description}</p>
+        <div className="flex flex-wrap justify-center gap-3">
           {isStaff && requiredRole === 'owner' && (
-            <Button onClick={() => window.location.href = '/staff'} className="bg-slate-900 text-white">
+            <Button onClick={() => (window.location.href = '/staff')} className="bg-slate-900 text-white">
               Go to Staff Terminal
             </Button>
           )}
-          <Button variant="outline" onClick={() => window.location.href = '/'}>
+          <Button
+            variant="outline"
+            onClick={async () => {
+              await signOut()
+              window.location.href = '/login'
+            }}
+          >
+            <LogOut className="w-4 h-4 mr-1.5" /> Sign Out
+          </Button>
+          <Button variant="outline" onClick={() => (window.location.href = '/')}>
             <ArrowLeft className="w-4 h-4 mr-1.5" /> Return Home
           </Button>
         </div>
