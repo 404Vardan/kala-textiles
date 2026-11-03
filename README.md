@@ -13,6 +13,7 @@
 [![Supabase](https://img.shields.io/badge/Supabase-Auth_%26_RLS-1C1917?style=flat-square&logo=supabase&logoColor=3ECF8E)](https://supabase.com/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Transactional_RPCs-1C1917?style=flat-square&logo=postgresql&logoColor=4169E1)](https://www.postgresql.org/)
 [![Capacitor](https://img.shields.io/badge/Capacitor-8.2_Android-1C1917?style=flat-square&logo=capacitor&logoColor=119EFF)](https://capacitorjs.com/)
+[![License](https://img.shields.io/badge/License-All_Rights_Reserved-C2410C?style=flat-square)](LICENSE)
 [![GitHub](https://img.shields.io/badge/GitHub-404Vardan%2Frangoli---1C1917?style=flat-square&logo=github&logoColor=FFFFFF)](https://github.com/404Vardan/rangoli-)
 
 [System Specification](docs/SPEC.md) · [Architecture Guide](docs/ARCHITECTURE.md) · [Contributing Guide](docs/CONTRIBUTING.md) · [Supabase Setup](SUPABASE_SETUP.md)
@@ -400,7 +401,9 @@ The following enhancements are planned for future iterations (and are **not** ye
 
 ## 15. License
 
-License selection is pending owner confirmation (**MIT License** vs. **All Rights Reserved**). Until a `LICENSE` file is added to the repository root, standard copyright laws apply and no permission is granted to copy, distribute, or commercially exploit the source code without explicit written authorization from the repository owner.
+**Copyright © 2026 Vardan (@404Vardan). All Rights Reserved.**
+
+This repository and its source code, database migrations, branding assets, and documentation are proprietary and published for portfolio showcase and architectural review purposes only. See [`LICENSE`](LICENSE) for full terms.
 
 ---
 
