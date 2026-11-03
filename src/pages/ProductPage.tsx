@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { QuantityStepper, LoadingState, EmptyState } from '@/components/ui/primitives'
 import { fetchPublicProduct, fetchProduct } from '@/services/products'
 import { fetchLocations, fetchStockByProduct } from '@/services/inventory'
 import { createPublicInquiry } from '@/services/inquiries'
@@ -14,6 +15,7 @@ import {
 } from '@/services/orderRequestCart'
 import { useAuth } from '@/contexts/AuthContext'
 import { useStaffOrderDraft } from '@/contexts/StaffOrderDraftContext'
+import { KalaLogo, resolveBrandName } from '@/components/common/KalaLogo'
 import type { InventoryLocation, InventoryStock, Product, PublicProduct } from '@/types'
 import { formatCurrency } from '@/utils/formatters'
 import {
@@ -23,13 +25,13 @@ import {
   ArrowLeft,
   Package,
   ShoppingBag,
-  Plus,
-  Minus,
   CheckCircle2,
   Warehouse,
   Store,
   ClipboardList,
   ArrowRight,
+  Film,
+  Layers,
 } from 'lucide-react'
 
 export default function ProductPage() {
@@ -83,7 +85,6 @@ export default function ProductPage() {
 
   useEffect(() => {
     syncCartSummary()
-
     const handleCartEvent = () => syncCartSummary()
     window.addEventListener(ORDER_REQUEST_CART_EVENT, handleCartEvent)
     window.addEventListener('storage', handleCartEvent)
@@ -246,484 +247,542 @@ export default function ProductPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-8 h-8 border-4 border-orange-200 border-t-orange-600 rounded-full animate-spin" />
+      <div className="min-h-screen bg-[#f8f7f4] flex items-center justify-center">
+        <LoadingState message="Loading product details..." />
       </div>
     )
   }
 
   if (error || !product) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen gap-4">
-        <Package className="w-16 h-16 text-gray-300" />
-        <h1 className="text-2xl font-bold text-gray-600">Product Not Found</h1>
-        <p className="text-gray-400">Design "{designNo}" could not be found</p>
-        <Link to="/" className="text-orange-600 hover:underline flex items-center gap-1">
-          <ArrowLeft className="w-4 h-4" /> Back to Home
-        </Link>
+      <div className="min-h-screen bg-[#f8f7f4] flex items-center justify-center px-4">
+        <div className="bg-white border border-stone-200 rounded-xl p-8 max-w-md w-full shadow-2xs">
+          <EmptyState
+            icon={Package}
+            title="Product Not Found"
+            description={`Design "${designNo}" could not be found in this catalog.`}
+            action={
+              <Link to="/">
+                <Button variant="outline" className="gap-1.5">
+                  <ArrowLeft className="w-4 h-4" /> Back to Home
+                </Button>
+              </Link>
+            }
+          />
+        </div>
       </div>
     )
   }
 
   return (
     <div
-      className={`min-h-screen bg-gradient-to-b from-orange-50 to-white ${
-        cartSummary.totalDesigns > 0 ? 'pb-28' : ''
+      className={`min-h-screen bg-[#f8f7f4] text-stone-900 flex flex-col justify-between ${
+        cartSummary.totalDesigns > 0 ? 'pb-32' : ''
       }`}
     >
-      {/* Header */}
-      <header className="bg-white/80 backdrop-blur-sm border-b sticky top-0 z-20">
-        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <Link to="/" className="text-gray-500 hover:text-gray-700">
-              <ArrowLeft className="w-5 h-5" />
+      {/* Commercial Header */}
+      <header className="bg-white border-b border-stone-200 sticky top-0 z-20">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <Link
+              to="/"
+              aria-label="Back to home"
+              className="w-9 h-9 rounded-lg border border-stone-200 flex items-center justify-center text-stone-600 hover:bg-stone-100 hover:text-stone-900 transition-colors shrink-0"
+            >
+              <ArrowLeft className="w-4 h-4" />
             </Link>
-            <h1 className="font-bold text-lg bg-gradient-to-r from-orange-600 to-rose-600 bg-clip-text text-transparent">
-              {product.business_name || 'Rangoli Textiles'}
-            </h1>
+            <KalaLogo iconOnly size="sm" />
+            <div className="min-w-0">
+              <h1 className="font-extrabold text-base sm:text-lg text-stone-900 truncate leading-tight">
+                {resolveBrandName(product.business_name)}
+              </h1>
+              <p className="text-xs text-stone-500 truncate">
+                Wholesale Product Catalog • Design {product.design_no}
+              </p>
+            </div>
           </div>
 
           {cartSummary.totalDesigns > 0 && (
             <Link
               to={`/${normalizedSlug}/order-request`}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold bg-orange-100 text-orange-800 px-3 py-1.5 rounded-full hover:bg-orange-200 transition-colors"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold bg-orange-50 text-orange-800 border border-orange-200 px-3 py-1.5 rounded-lg hover:bg-orange-100 transition-colors shrink-0"
             >
-              <ShoppingBag className="w-3.5 h-3.5" />
+              <ShoppingBag className="w-3.5 h-3.5 text-orange-700" />
               <span>
-                {cartSummary.totalDesigns} {cartSummary.totalDesigns === 1 ? 'Design' : 'Designs'} (
-                {cartSummary.totalSets} {cartSummary.totalSets === 1 ? 'Set' : 'Sets'})
+                {cartSummary.totalDesigns}{' '}
+                {cartSummary.totalDesigns === 1 ? 'Design' : 'Designs'} ·{' '}
+                {cartSummary.totalSets} {cartSummary.totalSets === 1 ? 'Set' : 'Sets'}
               </span>
             </Link>
           )}
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
-        {/* Media Carousel */}
-        {media.length > 0 && (
-          <div className="relative rounded-2xl overflow-hidden shadow-lg bg-gray-100">
-            <div className="aspect-[4/3] relative">
-              {media[currentSlide].media_type === 'video' ? (
-                <video
-                  key={currentSlide}
-                  src={media[currentSlide].media_url}
-                  className="w-full h-full object-contain bg-black"
-                  controls
-                  autoPlay
-                  muted
-                />
-              ) : (
-                <img
-                  key={currentSlide}
-                  src={media[currentSlide].media_url}
-                  alt={product.design_no}
-                  className="w-full h-full object-contain"
-                />
-              )}
-            </div>
-
-            {media.length > 1 && (
-              <>
-                <button
-                  onClick={prevSlide}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 bg-black/40 hover:bg-black/60 text-white rounded-full p-2 transition-colors"
-                >
-                  <ChevronLeft className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={nextSlide}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 bg-black/40 hover:bg-black/60 text-white rounded-full p-2 transition-colors"
-                >
-                  <ChevronRight className="w-5 h-5" />
-                </button>
-                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
-                  {media.map((_, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setCurrentSlide(i)}
-                      className={`w-2 h-2 rounded-full transition-colors ${
-                        i === currentSlide ? 'bg-white' : 'bg-white/50'
-                      }`}
+      <main className="max-w-6xl mx-auto w-full px-4 sm:px-6 py-6 sm:py-8 space-y-8 flex-1">
+        {/* Top Product Grid: Media Gallery (Left) + Wholesale Specs & Order Controls (Right) */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
+          {/* Media Gallery Column */}
+          <div className="lg:col-span-7 space-y-3">
+            <div className="bg-white rounded-xl border border-stone-200 overflow-hidden shadow-2xs">
+              {media.length > 0 ? (
+                <div className="relative aspect-[4/3] bg-stone-900 flex items-center justify-center">
+                  {media[currentSlide].media_type === 'video' ? (
+                    <video
+                      key={currentSlide}
+                      src={media[currentSlide].media_url}
+                      className="w-full h-full object-contain bg-black"
+                      controls
+                      autoPlay
+                      muted
                     />
-                  ))}
+                  ) : (
+                    <img
+                      key={currentSlide}
+                      src={media[currentSlide].media_url}
+                      alt={`Design ${product.design_no}`}
+                      className="w-full h-full object-contain bg-stone-100"
+                    />
+                  )}
+
+                  {media.length > 1 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={prevSlide}
+                        aria-label="Previous image"
+                        className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-stone-900/75 hover:bg-stone-900 text-white flex items-center justify-center transition-colors cursor-pointer"
+                      >
+                        <ChevronLeft className="w-5 h-5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={nextSlide}
+                        aria-label="Next image"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-stone-900/75 hover:bg-stone-900 text-white flex items-center justify-center transition-colors cursor-pointer"
+                      >
+                        <ChevronRight className="w-5 h-5" />
+                      </button>
+                      <div className="absolute bottom-3 right-3 bg-stone-900/80 text-white text-xs font-medium px-2.5 py-1 rounded-md tabular-nums">
+                        {currentSlide + 1} / {media.length}
+                      </div>
+                    </>
+                  )}
                 </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* Thumbnail strip */}
-        {media.length > 1 && (
-          <div className="flex gap-2 overflow-x-auto pb-2">
-            {media.map((m, i) => (
-              <button
-                key={m.id}
-                onClick={() => setCurrentSlide(i)}
-                className={`shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-colors ${
-                  i === currentSlide ? 'border-orange-500' : 'border-transparent'
-                }`}
-              >
-                {m.media_type === 'video' ? (
-                  <video src={m.media_url} className="w-full h-full object-cover" />
-                ) : (
-                  <img src={m.media_url} alt="" className="w-full h-full object-cover" />
-                )}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Product Details & Buyer Order Controls */}
-        <div className="bg-white rounded-2xl shadow-sm border p-6 space-y-5">
-          <div>
-            <h2 className="text-3xl font-bold text-gray-900">{product.design_no}</h2>
-            <div className="flex flex-wrap gap-2 mt-2">
-              {product.brand && (
-                <span className="bg-orange-50 text-orange-700 px-3 py-1 rounded-full text-sm font-medium">
-                  {product.brand}
-                </span>
-              )}
-              {product.collection_name && (
-                <span className="bg-rose-50 text-rose-700 px-3 py-1 rounded-full text-sm font-medium">
-                  {product.collection_name}
-                </span>
-              )}
-              {product.fabric && (
-                <span className="bg-amber-50 text-amber-700 px-3 py-1 rounded-full text-sm font-medium">
-                  {product.fabric}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {product.rate && (
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-bold text-orange-600">
-                {formatCurrency(product.rate)}
-              </span>
-              <span className="text-gray-400">/piece</span>
-            </div>
-          )}
-
-          {product.pcs_per_set && product.pcs_per_set > 1 && (
-            <p className="text-sm text-gray-500">
-              {product.pcs_per_set} pieces per set
-              {product.rate && ` • ${formatCurrency(product.rate * product.pcs_per_set)}/set`}
-            </p>
-          )}
-
-          {product.description && (
-            <p className="text-gray-600 leading-relaxed">{product.description}</p>
-          )}
-
-          {/* Buyer Order List Controls */}
-          <div className="pt-4 border-t border-gray-100 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-gray-800">Order Quantity (Sets)</span>
-              {existingCartItem && (
-                <span className="text-xs font-medium bg-orange-50 text-orange-700 px-2.5 py-1 rounded-full">
-                  In Order List: {existingCartItem.sets}{' '}
-                  {existingCartItem.sets === 1 ? 'set' : 'sets'}
-                </span>
-              )}
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-              {/* Stepper */}
-              <div className="inline-flex items-center justify-between sm:justify-start border rounded-xl bg-gray-50 p-1">
-                <button
-                  type="button"
-                  onClick={() => setOrderSets((prev) => clampRequestSets(prev - 1))}
-                  disabled={orderSets <= 1}
-                  className="w-10 h-10 rounded-lg flex items-center justify-center text-gray-700 hover:bg-white hover:shadow-sm disabled:opacity-40 transition-all"
-                  aria-label="Decrease sets"
-                >
-                  <Minus className="w-4 h-4" />
-                </button>
-                <input
-                  type="number"
-                  min={1}
-                  max={500}
-                  value={orderSets}
-                  onChange={(e) => {
-                    const val = parseInt(e.target.value, 10)
-                    if (!Number.isNaN(val)) {
-                      setOrderSets(clampRequestSets(val))
-                    }
-                  }}
-                  className="w-16 text-center font-bold text-lg bg-transparent focus:outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={() => setOrderSets((prev) => clampRequestSets(prev + 1))}
-                  disabled={orderSets >= 500}
-                  className="w-10 h-10 rounded-lg flex items-center justify-center text-gray-700 hover:bg-white hover:shadow-sm disabled:opacity-40 transition-all"
-                  aria-label="Increase sets"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
-              </div>
-
-              <Button
-                type="button"
-                onClick={handleAddToCustomerOrderList}
-                className="flex-1 h-12 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-xl gap-2 text-base"
-              >
-                <ShoppingBag className="w-5 h-5" />
-                Add to Order List
-              </Button>
-            </div>
-
-            {addedFeedback && (
-              <div className="flex items-center justify-between gap-2 bg-green-50 border border-green-200 text-green-800 px-3.5 py-2.5 rounded-xl text-sm">
-                <div className="flex items-center gap-2 font-medium">
-                  <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
-                  <span>{addedFeedback}</span>
-                </div>
-                <Link
-                  to={`/${normalizedSlug}/order-request`}
-                  className="text-xs font-bold text-green-900 underline shrink-0"
-                >
-                  Review Order
-                </Link>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Authenticated Staff Operations Section (shown ONLY to logged-in staff/owner of this business) */}
-        {isAuthorizedStaffForSlug && (
-          <div className="bg-slate-900 text-white rounded-2xl shadow-md border border-slate-800 p-6 space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <span className="bg-orange-500/20 text-orange-400 border border-orange-500/30 text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-full">
-                  Staff Mode
-                </span>
-                <h3 className="font-semibold text-base">Live Inventory & Staff Order</h3>
-              </div>
-
-              {staffDraftDesigns > 0 && (
-                <button
-                  type="button"
-                  onClick={() => navigate(staffOrderPortalPath)}
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold bg-orange-600 hover:bg-orange-500 text-white px-3 py-1.5 rounded-lg transition-colors"
-                >
-                  <ClipboardList className="w-3.5 h-3.5" />
-                  <span>
-                    Active Draft: {staffDraftDesigns}{' '}
-                    {staffDraftDesigns === 1 ? 'Design' : 'Designs'} ({staffDraftSets}{' '}
-                    {staffDraftSets === 1 ? 'Set' : 'Sets'})
+              ) : (
+                <div className="aspect-[4/3] bg-stone-100 flex flex-col items-center justify-center gap-2 text-stone-400">
+                  <Package className="w-12 h-12 stroke-[1.5]" />
+                  <span className="text-xs font-medium text-stone-500">
+                    Design {product.design_no}
                   </span>
-                </button>
+                </div>
               )}
             </div>
 
-            {staffLoading ? (
-              <p className="text-sm text-slate-400 py-2">Loading live inventory...</p>
-            ) : staffError ? (
-              <p className="text-sm text-red-400 bg-red-950/50 border border-red-800/50 rounded-lg p-3">
-                {staffError}
-              </p>
-            ) : (
-              <>
-                {/* Godown & Shop Floor Stock Cards */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-slate-800/80 border border-slate-700/70 rounded-xl p-3.5">
-                    <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-1">
-                      <Warehouse className="w-3.5 h-3.5 text-blue-400" />
-                      <span>Godown Stock</span>
-                    </div>
-                    <p className="text-xl font-bold text-white">
-                      {godownSets} <span className="text-sm font-normal text-slate-300">Sets</span>
-                    </p>
-                    <p className="text-xs text-slate-400">{godownPcs} Pcs</p>
-                  </div>
+            {/* Thumbnail Strip */}
+            {media.length > 1 && (
+              <div className="flex gap-2.5 overflow-x-auto pb-1">
+                {media.map((m, i) => (
+                  <button
+                    key={m.id || i}
+                    type="button"
+                    onClick={() => setCurrentSlide(i)}
+                    aria-label={`View media ${i + 1}`}
+                    className={`relative shrink-0 w-16 h-16 sm:w-20 sm:h-20 rounded-lg overflow-hidden border-2 transition-all cursor-pointer ${
+                      i === currentSlide
+                        ? 'border-orange-700 ring-2 ring-orange-700/20'
+                        : 'border-stone-200 opacity-75 hover:opacity-100'
+                    }`}
+                  >
+                    {m.media_type === 'video' ? (
+                      <>
+                        <video src={m.media_url} className="w-full h-full object-cover" />
+                        <span className="absolute bottom-1 right-1 bg-stone-900/80 text-white p-0.5 rounded">
+                          <Film className="w-3 h-3" />
+                        </span>
+                      </>
+                    ) : (
+                      <img src={m.media_url} alt="" className="w-full h-full object-cover" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
-                  <div className="bg-slate-800/80 border border-slate-700/70 rounded-xl p-3.5">
-                    <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-1">
-                      <Store className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Shop Floor Stock</span>
-                    </div>
-                    <p className="text-xl font-bold text-white">
-                      {shopSets} <span className="text-sm font-normal text-slate-300">Sets</span>
-                    </p>
-                    <p className="text-xs text-slate-400">{shopPcs} Pcs</p>
-                  </div>
+          {/* Product Details & Ordering Column */}
+          <div className="lg:col-span-5 space-y-5">
+            <div className="bg-white rounded-xl border border-stone-200 shadow-2xs p-5 sm:p-6 space-y-5">
+              {/* Design Identifier & Metadata */}
+              <div className="space-y-2.5 border-b border-stone-100 pb-4">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-stone-500">
+                    Design Number
+                  </span>
+                  {existingCartItem && (
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold bg-orange-50 text-orange-800 border border-orange-200 px-2.5 py-0.5 rounded-md">
+                      In Order List: {existingCartItem.sets}{' '}
+                      {existingCartItem.sets === 1 ? 'set' : 'sets'}
+                    </span>
+                  )}
                 </div>
 
-                {/* Add to Current Staff Order */}
-                {staffProduct && (
-                  <div className="pt-2 space-y-3">
-                    <div className="flex items-center justify-between text-xs text-slate-300">
-                      <span>Add to Staff Draft Order (Sets)</span>
-                      {existingStaffDraftItem && (
-                        <span className="text-orange-400 font-semibold">
-                          In Current Draft: {existingStaffDraftItem.sets}{' '}
-                          {existingStaffDraftItem.sets === 1 ? 'set' : 'sets'}
-                        </span>
-                      )}
-                    </div>
+                <h2 className="text-2xl sm:text-3xl font-bold text-stone-900 tracking-tight">
+                  {product.design_no}
+                </h2>
 
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                      <div className="inline-flex items-center justify-between sm:justify-start border border-slate-700 rounded-xl bg-slate-800 p-1">
-                        <button
-                          type="button"
-                          onClick={() => setStaffSetsToAdd((prev) => clampRequestSets(prev - 1))}
-                          disabled={staffSetsToAdd <= 1}
-                          className="w-9 h-9 rounded-lg flex items-center justify-center text-white hover:bg-slate-700 disabled:opacity-40"
-                        >
-                          <Minus className="w-4 h-4" />
-                        </button>
-                        <input
-                          type="number"
-                          min={1}
-                          max={500}
-                          value={staffSetsToAdd}
-                          onChange={(e) => {
-                            const val = parseInt(e.target.value, 10)
-                            if (!Number.isNaN(val)) {
-                              setStaffSetsToAdd(clampRequestSets(val))
-                            }
-                          }}
-                          className="w-14 text-center font-bold text-base bg-transparent text-white focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setStaffSetsToAdd((prev) => clampRequestSets(prev + 1))}
-                          disabled={staffSetsToAdd >= 500}
-                          className="w-9 h-9 rounded-lg flex items-center justify-center text-white hover:bg-slate-700 disabled:opacity-40"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
-                      </div>
-
-                      <Button
-                        type="button"
-                        onClick={handleAddToStaffDraftOrder}
-                        className="flex-1 h-11 bg-orange-600 hover:bg-orange-500 text-white font-semibold rounded-xl gap-2"
-                      >
-                        <ClipboardList className="w-4 h-4" />
-                        Add to Current Order
-                      </Button>
-
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => navigate(staffOrderPortalPath)}
-                        className="h-11 border-slate-700 bg-slate-800 hover:bg-slate-700 text-white rounded-xl gap-1.5"
-                      >
-                        <span>Open Order Form</span>
-                        <ArrowRight className="w-4 h-4" />
-                      </Button>
-                    </div>
-
-                    {staffAddedMsg && (
-                      <div className="flex items-center justify-between gap-2 bg-emerald-950/60 border border-emerald-700/60 text-emerald-300 px-3 py-2 rounded-lg text-xs">
-                        <span>{staffAddedMsg}</span>
-                        <button
-                          type="button"
-                          onClick={() => navigate(staffOrderPortalPath)}
-                          className="font-bold underline text-emerald-200"
-                        >
-                          Go to Draft Order
-                        </button>
-                      </div>
+                {(product.brand || product.collection_name || product.fabric) && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {product.brand && (
+                      <span className="bg-stone-100 text-stone-800 border border-stone-200 px-2.5 py-1 rounded-md text-xs font-semibold">
+                        Brand: {product.brand}
+                      </span>
+                    )}
+                    {product.collection_name && (
+                      <span className="bg-stone-100 text-stone-800 border border-stone-200 px-2.5 py-1 rounded-md text-xs font-semibold">
+                        {product.collection_name}
+                      </span>
+                    )}
+                    {product.fabric && (
+                      <span className="bg-orange-50 text-orange-800 border border-orange-200/80 px-2.5 py-1 rounded-md text-xs font-semibold">
+                        Fabric: {product.fabric}
+                      </span>
                     )}
                   </div>
                 )}
-              </>
+              </div>
+
+              {/* Wholesale Rate & Set Specification */}
+              <div className="grid grid-cols-2 gap-3 bg-stone-50 rounded-lg p-3.5 border border-stone-200/80">
+                <div>
+                  <span className="text-xs font-medium text-stone-500 block">Wholesale Rate</span>
+                  {product.rate ? (
+                    <div className="flex items-baseline gap-1 mt-0.5">
+                      <span className="text-xl sm:text-2xl font-bold text-orange-700 tabular-nums">
+                        {formatCurrency(product.rate)}
+                      </span>
+                      <span className="text-xs text-stone-500 font-medium">/ pc</span>
+                    </div>
+                  ) : (
+                    <span className="text-sm font-semibold text-stone-700 mt-1 block">
+                      Rate on Inquiry
+                    </span>
+                  )}
+                </div>
+
+                <div className="border-l border-stone-200 pl-3">
+                  <span className="text-xs font-medium text-stone-500 block">Set Packing</span>
+                  <div className="flex items-baseline gap-1 mt-0.5">
+                    <Layers className="w-3.5 h-3.5 text-stone-500 self-center mr-0.5" />
+                    <span className="text-base sm:text-lg font-bold text-stone-900 tabular-nums">
+                      {pcsPerSet} {pcsPerSet === 1 ? 'Pc' : 'Pcs'}
+                    </span>
+                    <span className="text-xs text-stone-500">/ set</span>
+                  </div>
+                  {product.rate && pcsPerSet > 1 && (
+                    <span className="text-xs text-stone-500 block tabular-nums">
+                      {formatCurrency(product.rate * pcsPerSet)} / set
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {product.description && (
+                <div className="text-sm text-stone-600 leading-relaxed bg-stone-50/60 p-3 rounded-lg border border-stone-200/60">
+                  {product.description}
+                </div>
+              )}
+
+              {/* Buyer Order List Controls */}
+              <div className="pt-2 space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold uppercase tracking-wider text-stone-700">
+                    Select Quantity (Sets)
+                  </Label>
+                  <span className="text-xs text-stone-500 font-medium tabular-nums">
+                    {orderSets} {orderSets === 1 ? 'set' : 'sets'} = {orderSets * pcsPerSet}{' '}
+                    {orderSets * pcsPerSet === 1 ? 'piece' : 'pieces'}
+                  </span>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                  <QuantityStepper
+                    value={orderSets}
+                    onChange={setOrderSets}
+                    min={1}
+                    max={500}
+                    size="lg"
+                    ariaLabel="Number of sets to add to order list"
+                    className="w-full sm:w-auto justify-between"
+                  />
+
+                  <Button
+                    type="button"
+                    size="lg"
+                    onClick={handleAddToCustomerOrderList}
+                    className="flex-1 h-12 bg-orange-700 hover:bg-orange-800 text-white font-bold rounded-lg gap-2 text-sm sm:text-base shadow-xs"
+                  >
+                    <ShoppingBag className="w-4 h-4" />
+                    <span>Add to Order List</span>
+                  </Button>
+                </div>
+
+                {addedFeedback && (
+                  <div
+                    role="status"
+                    className="flex items-center justify-between gap-2 bg-emerald-50 border border-emerald-200 text-emerald-900 px-3.5 py-2.5 rounded-lg text-xs sm:text-sm"
+                  >
+                    <div className="flex items-center gap-2 font-medium">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                      <span>{addedFeedback}</span>
+                    </div>
+                    <Link
+                      to={`/${normalizedSlug}/order-request`}
+                      className="text-xs font-bold text-emerald-900 underline shrink-0"
+                    >
+                      Review Order →
+                    </Link>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Authenticated Staff Operations Card */}
+            {isAuthorizedStaffForSlug && (
+              <div className="bg-stone-900 text-white rounded-xl shadow-sm border border-stone-800 p-5 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-800 pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="bg-orange-600/20 text-orange-400 border border-orange-500/30 text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-md">
+                      Staff Mode
+                    </span>
+                    <h3 className="font-bold text-sm sm:text-base">
+                      Live Inventory & Staff Order
+                    </h3>
+                  </div>
+
+                  {staffDraftDesigns > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => navigate(staffOrderPortalPath)}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold bg-orange-700 hover:bg-orange-600 text-white px-2.5 py-1.5 rounded-md transition-colors cursor-pointer"
+                    >
+                      <ClipboardList className="w-3.5 h-3.5" />
+                      <span>
+                        Draft: {staffDraftDesigns} · {staffDraftSets}{' '}
+                        {staffDraftSets === 1 ? 'set' : 'sets'}
+                      </span>
+                    </button>
+                  )}
+                </div>
+
+                {staffLoading ? (
+                  <p className="text-xs text-stone-400 py-2">Loading live inventory...</p>
+                ) : staffError ? (
+                  <p className="text-xs text-red-300 bg-red-950/60 border border-red-800/60 rounded-lg p-3">
+                    {staffError}
+                  </p>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-stone-800/90 border border-stone-700 rounded-lg p-3">
+                        <div className="flex items-center gap-1.5 text-xs text-stone-300 mb-1">
+                          <Warehouse className="w-3.5 h-3.5 text-sky-400" />
+                          <span>Godown Stock</span>
+                        </div>
+                        <p className="text-lg font-bold text-white tabular-nums">
+                          {godownSets}{' '}
+                          <span className="text-xs font-normal text-stone-300">sets</span>
+                        </p>
+                        <p className="text-xs text-stone-400 tabular-nums">{godownPcs} pcs</p>
+                      </div>
+
+                      <div className="bg-stone-800/90 border border-stone-700 rounded-lg p-3">
+                        <div className="flex items-center gap-1.5 text-xs text-stone-300 mb-1">
+                          <Store className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Shop Floor</span>
+                        </div>
+                        <p className="text-lg font-bold text-white tabular-nums">
+                          {shopSets}{' '}
+                          <span className="text-xs font-normal text-stone-300">sets</span>
+                        </p>
+                        <p className="text-xs text-stone-400 tabular-nums">{shopPcs} pcs</p>
+                      </div>
+                    </div>
+
+                    {staffProduct && (
+                      <div className="pt-1 space-y-3">
+                        <div className="flex items-center justify-between text-xs text-stone-300">
+                          <span>Add to Staff Draft Order</span>
+                          {existingStaffDraftItem && (
+                            <span className="text-orange-400 font-semibold">
+                              In Draft: {existingStaffDraftItem.sets}{' '}
+                              {existingStaffDraftItem.sets === 1 ? 'set' : 'sets'}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                          <QuantityStepper
+                            value={staffSetsToAdd}
+                            onChange={setStaffSetsToAdd}
+                            min={1}
+                            max={500}
+                            variant="dark"
+                            ariaLabel="Sets to add to staff draft order"
+                            className="w-full sm:w-auto justify-between"
+                          />
+
+                          <Button
+                            type="button"
+                            onClick={handleAddToStaffDraftOrder}
+                            className="flex-1 h-10 bg-orange-700 hover:bg-orange-600 text-white font-semibold rounded-lg gap-1.5"
+                          >
+                            <ClipboardList className="w-4 h-4" />
+                            <span>Add to Current Order</span>
+                          </Button>
+                        </div>
+
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => navigate(staffOrderPortalPath)}
+                          className="w-full h-9 border-stone-700 bg-stone-800 hover:bg-stone-700 text-stone-100 rounded-lg gap-1.5 text-xs"
+                        >
+                          <span>Open Staff Order Form</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </Button>
+
+                        {staffAddedMsg && (
+                          <div className="flex items-center justify-between gap-2 bg-emerald-950/70 border border-emerald-700/60 text-emerald-200 px-3 py-2 rounded-lg text-xs">
+                            <span>{staffAddedMsg}</span>
+                            <button
+                              type="button"
+                              onClick={() => navigate(staffOrderPortalPath)}
+                              className="font-bold underline text-white shrink-0 cursor-pointer"
+                            >
+                              Open Draft
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             )}
           </div>
-        )}
-
-        {/* Inquiry Form */}
-        <div className="bg-white rounded-2xl shadow-sm border p-6">
-          <h3 className="text-lg font-semibold mb-4">Interested? Send an Inquiry</h3>
-
-          {submitted ? (
-            <div className="text-center py-6 space-y-2">
-              <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto">
-                <Send className="w-6 h-6 text-green-600" />
-              </div>
-              <p className="font-medium text-green-700">Inquiry Sent!</p>
-              <p className="text-sm text-gray-500">We'll get back to you soon.</p>
-              <Button variant="outline" size="sm" onClick={() => setSubmitted(false)}>
-                Send Another
-              </Button>
-            </div>
-          ) : (
-            <form onSubmit={handleSubmitInquiry} className="space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label>Your Name *</Label>
-                  <Input
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="Full name"
-                    required
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label>Phone Number *</Label>
-                  <Input
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="+91..."
-                    required
-                  />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <Label>Message (optional)</Label>
-                <Input
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Any specific requirements..."
-                />
-              </div>
-              <Button
-                type="submit"
-                className="w-full bg-orange-600 hover:bg-orange-700"
-                disabled={submitting || !name.trim() || !phone.trim()}
-              >
-                {submitting ? 'Sending...' : 'Send Inquiry'}
-              </Button>
-            </form>
-          )}
         </div>
+
+        {/* Customer Inquiry Card */}
+        <section className="bg-white rounded-xl border border-stone-200 shadow-2xs p-5 sm:p-6">
+          <div className="max-w-2xl space-y-4">
+            <div>
+              <h3 className="text-base sm:text-lg font-bold text-stone-900">
+                Have a Question About Design {product.design_no}?
+              </h3>
+              <p className="text-xs sm:text-sm text-stone-500">
+                Send a direct inquiry for bulk pricing, custom dispatch, or fabric availability.
+              </p>
+            </div>
+
+            {submitted ? (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center shrink-0">
+                    <Send className="w-5 h-5 text-emerald-700" />
+                  </div>
+                  <div>
+                    <p className="font-bold text-sm text-emerald-900">Inquiry Sent to Shop</p>
+                    <p className="text-xs text-emerald-800">
+                      Our sales team will contact you shortly regarding Design {product.design_no}.
+                    </p>
+                  </div>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => setSubmitted(false)}>
+                  Send Another Inquiry
+                </Button>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmitInquiry} className="space-y-3.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="inquiry-name">Your Name / Firm Name *</Label>
+                    <Input
+                      id="inquiry-name"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="Enter your name"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="inquiry-phone">Phone Number *</Label>
+                    <Input
+                      id="inquiry-phone"
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="+91 98765 43210"
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="inquiry-message">Message (Optional)</Label>
+                  <Input
+                    id="inquiry-message"
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    placeholder="Specific quantity, station, or dispatch inquiry..."
+                  />
+                </div>
+                <div>
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    className="w-full sm:w-auto border-stone-300 text-stone-800 hover:bg-stone-100"
+                    disabled={submitting || !name.trim() || !phone.trim()}
+                  >
+                    <Send className="w-4 h-4 mr-1.5 text-orange-700" />
+                    {submitting ? 'Sending Inquiry...' : 'Send Inquiry'}
+                  </Button>
+                </div>
+              </form>
+            )}
+          </div>
+        </section>
       </main>
 
       {/* Footer */}
-      <footer className="text-center py-6 text-sm text-gray-400">
-        © {product.business_name || 'Rangoli Textiles'}
+      <footer className="border-t border-stone-200 bg-white text-center py-4 px-4 text-xs text-stone-500">
+        © {new Date().getFullYear()} {resolveBrandName(product.business_name)} • Textile Wholesale Management System
       </footer>
 
-      {/* Floating Bottom Order Bar (Customer Order List) */}
+      {/* Mobile-Safe Floating Bottom Order Bar */}
       {cartSummary.totalDesigns > 0 && (
-        <div className="fixed bottom-0 inset-x-0 z-30 p-3 sm:p-4 bg-gradient-to-t from-white via-white/95 to-transparent pointer-events-none">
-          <div className="max-w-xl mx-auto pointer-events-auto">
+        <div className="fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur-xs border-t border-stone-200 shadow-lg px-4 pt-3 pb-safe">
+          <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-lg bg-orange-50 border border-orange-200 text-orange-700 flex items-center justify-center shrink-0">
+                <ShoppingBag className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm sm:text-base font-bold text-stone-900 truncate tabular-nums">
+                  {cartSummary.totalDesigns}{' '}
+                  {cartSummary.totalDesigns === 1 ? 'design' : 'designs'} ·{' '}
+                  {cartSummary.totalSets} {cartSummary.totalSets === 1 ? 'set' : 'sets'}
+                </p>
+                <p className="text-xs text-stone-500 truncate">
+                  Saved in your wholesale order list
+                </p>
+              </div>
+            </div>
+
             <Link
               to={`/${normalizedSlug}/order-request`}
-              className="w-full flex items-center justify-between gap-3 bg-orange-600 hover:bg-orange-700 text-white px-5 py-3.5 rounded-2xl shadow-xl transition-all"
+              className="inline-flex items-center gap-1.5 font-bold text-xs sm:text-sm bg-orange-700 hover:bg-orange-800 text-white px-4 py-2.5 rounded-lg shadow-xs transition-colors shrink-0"
             >
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
-                  <ShoppingBag className="w-5 h-5" />
-                </div>
-                <div>
-                  <p className="text-sm sm:text-base font-bold leading-tight">
-                    {cartSummary.totalDesigns}{' '}
-                    {cartSummary.totalDesigns === 1 ? 'design' : 'designs'} ·{' '}
-                    {cartSummary.totalSets} {cartSummary.totalSets === 1 ? 'set' : 'sets'}
-                  </p>
-                  <p className="text-xs text-orange-100">Ready in your Order List</p>
-                </div>
-              </div>
-
-              <div className="inline-flex items-center gap-1.5 font-bold text-sm sm:text-base bg-white text-orange-700 px-4 py-2 rounded-xl shadow-sm">
-                <span>Review Order</span>
-                <ArrowRight className="w-4 h-4" />
-              </div>
+              <span>Review Order</span>
+              <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
         </div>

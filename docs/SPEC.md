@@ -1,7 +1,7 @@
-# Rangoli Textiles Management System — System Specification
+# Kala — Textile Wholesale Management System Specification
 
 ## 1. Overview & Architecture
-The Rangoli Textile Management System is an operational wholesale management application designed specifically for textile manufacturers and wholesale merchants. It governs product cataloging, high-resolution media galleries, permanent QR labeling, dual-location inventory management (Godown & Shop Floor), buyer QR order requests, staff mobile terminal scanning, party/agent directories, and transactional order lifecycle management with vector A4 PDF generation.
+**Kala** is an operational wholesale management application designed specifically for textile manufacturers and wholesale merchants. It governs product cataloging, high-resolution media galleries, permanent QR labeling, dual-location inventory management (Godown & Shop Floor), buyer QR order requests, staff mobile terminal scanning, party/agent directories, and transactional order lifecycle management with vector A4 PDF generation.
 
 ### Core Stack
 - **Frontend**: React 19 + TypeScript + Vite 7
@@ -15,7 +15,7 @@ The Rangoli Textile Management System is an operational wholesale management app
 ## 2. Multi-Tenancy & Security Model (Migrations 005 & 006)
 
 ### Business & Membership Model
-- **`businesses`**: Root tenant table (`id`, `name`, `slug`, `settings`). Default business: `'Rangoli Textiles'` (`slug: 'rangoli'`).
+- **`businesses`**: Root tenant table (`id`, `name`, `slug`, `settings`). Default tenant slug: `'rangoli'` (preserved for QR URL backward compatibility; UI brand display resolves legacy `'Rangoli Textiles'` seed records to `'Kala'`).
 - **`memberships`**: Maps Supabase Auth `auth.users(id)` to `businesses(id)` with roles `owner` and `staff`.
 - **Row Level Security (RLS)**:
   - All business tables (`products`, `product_media`, `inventory_locations`, `inventory_stock`, `stock_movements`, `parties`, `agents`, `orders`, `order_items`, `order_requests`, `order_request_items`, `invoices`, `invoice_items`, `inquiries`, `admin_settings`, `business_order_counters`) enforce tenant isolation via `business_id` and helper function `is_business_member(business_id)`.
@@ -85,7 +85,7 @@ Concurrent-safe, atomic order sequence generator using `business_order_counters`
    - Displays public product media, wholesale rate, pieces per set, and inquiry form.
    - Includes set quantity stepper (`1`–`500`), **Add to Order List** button, and a sticky mobile-safe floating bottom bar (`X designs · Y sets · Review Order`) linking to `/:slug/order-request`.
 2. **Buyer Order List Store (`src/services/orderRequestCart.ts`)**:
-   - Stored in `localStorage` under `rangoli:order-request-cart:${slug}`.
+   - Stored in `localStorage` under `kala:order-request-cart:${slug}` (with automatic migration from legacy `rangoli:order-request-cart:${slug}`).
    - Scoped per business slug so multi-tenant carts never collide.
 3. **Review Order Request Page (`src/pages/OrderRequestPage.tsx`)**:
    - Allows adjusting set quantities (`1`–`500`), removing designs, and entering required Customer Name, Phone, and optional Note.
@@ -97,7 +97,7 @@ Concurrent-safe, atomic order sequence generator using `business_order_counters`
    - Rendered only when `user` is logged in, `isStaff` is true, and `business.slug === slug`.
    - Queries private Godown and Shop Floor inventory via authenticated RLS-protected services (`fetchProduct`, `fetchLocations`, `fetchStockByProduct`) and provides an **Add to Current Order** action.
 2. **Shared Staff Order Draft (`src/contexts/StaffOrderDraftContext.tsx`)**:
-   - Persisted in `localStorage` under `rangoli:staff-order-draft:${user.id}:${business.id}`.
+   - Persisted in `localStorage` under `kala:staff-order-draft:${user.id}:${business.id}` (with automatic migration from legacy `rangoli:staff-order-draft:${user.id}:${business.id}`).
    - Shared across `ProductPage.tsx`, `ShopScanTab.tsx`, and `OrderTab.tsx` so staff can scan or browse multiple designs and resume the unsaved draft order in `OrderTab.tsx` before clicking **Save Draft Order**.
 3. **Admin Buyer Order Requests Section (`src/components/admin/OrderRequestsSection.tsx`)**:
    - Rendered inside `OrderTab.tsx` for business owners (`!isStaff`) with a pending-request count badge.

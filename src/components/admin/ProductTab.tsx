@@ -29,9 +29,11 @@ import {
 } from '@/services/products'
 import { uploadProductMedia, deleteMediaFile, getPathFromUrl } from '@/services/storage'
 import MediaManager from '@/components/admin/MediaManager'
+import { useAuth } from '@/contexts/AuthContext'
 import type { Product } from '@/types'
 import { formatCurrency } from '@/utils/formatters'
 import { generateQRCodeForProduct, downloadQRCode, printProductLabel } from '@/utils/qrcode'
+import { StatusBadge, EmptyState, LoadingState } from '@/components/ui/primitives'
 import {
   Trash2,
   Edit2,
@@ -40,13 +42,12 @@ import {
   Plus,
   Image as ImageIcon,
   Search,
-  CheckCircle2,
-  XCircle,
   QrCode,
   Film,
   Star,
   Eye,
   Filter,
+  Package,
 } from 'lucide-react'
 
 interface StagedMediaFile {
@@ -58,6 +59,9 @@ interface StagedMediaFile {
 }
 
 export default function ProductTab() {
+  const { business } = useAuth()
+  const activeSlug = business?.slug || 'rangoli'
+
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -299,7 +303,7 @@ export default function ProductTab() {
   // QR Label Print / Download
   const handleOpenQrModal = async (product: Product) => {
     try {
-      const qrData = await generateQRCodeForProduct(product.design_no)
+      const qrData = await generateQRCodeForProduct(product.design_no, activeSlug)
       setPreviewQrProduct(product)
       setPreviewQrDataUrl(qrData)
     } catch (err: any) {
@@ -311,57 +315,63 @@ export default function ProductTab() {
     printProductLabel(product, qrDataUrl)
   }
 
+  const activeCount = products.filter(p => p.is_active !== false).length
+
   return (
     <div className="space-y-6">
       {/* Action and Filter Bar */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+      <div className="bg-white p-4 rounded-xl border border-stone-200/80 shadow-2xs space-y-4">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
           <div className="relative w-full sm:w-80">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
             <Input
+              aria-label="Search products"
               placeholder="Search design number, fabric, brand..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 bg-slate-50 border-slate-200"
+              className="pl-9 bg-stone-50/70"
             />
           </div>
-          <Button onClick={openCreateForm} className="bg-slate-900 hover:bg-slate-800 text-white shrink-0">
-            <Plus className="w-4 h-4 mr-1.5" /> New Product
+          <Button onClick={openCreateForm} className="w-full sm:w-auto bg-orange-700 hover:bg-orange-800 text-white shrink-0">
+            <Plus className="w-4 h-4 mr-1.5" /> New Product Design
           </Button>
         </div>
 
         {/* Filter controls */}
-        <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-100 text-xs">
-          <span className="font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-            <Filter className="w-3.5 h-3.5" /> Filters:
+        <div className="flex flex-wrap items-center gap-2.5 pt-3 border-t border-stone-100 text-xs">
+          <span className="font-semibold text-stone-500 uppercase tracking-wider flex items-center gap-1 mr-1">
+            <Filter className="w-3.5 h-3.5" /> Filter:
           </span>
 
           <select
+            aria-label="Filter by brand"
             value={brandFilter}
             onChange={(e) => setBrandFilter(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-700"
+            className="bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-1.5 font-medium text-stone-700 focus:outline-none focus:ring-2 focus:ring-orange-600/20 focus:border-orange-700"
           >
             <option value="all">All Brands</option>
             {uniqueBrands.map(b => <option key={b} value={b}>{b}</option>)}
           </select>
 
           <select
+            aria-label="Filter by collection"
             value={collectionFilter}
             onChange={(e) => setCollectionFilter(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-700"
+            className="bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-1.5 font-medium text-stone-700 focus:outline-none focus:ring-2 focus:ring-orange-600/20 focus:border-orange-700"
           >
             <option value="all">All Collections</option>
             {uniqueCollections.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
 
           <select
+            aria-label="Filter by status"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as any)}
-            className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-700"
+            className="bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-1.5 font-medium text-stone-700 focus:outline-none focus:ring-2 focus:ring-orange-600/20 focus:border-orange-700"
           >
-            <option value="all">All Status</option>
-            <option value="active">Active Only</option>
-            <option value="archived">Archived Only</option>
+            <option value="all">All Status ({products.length})</option>
+            <option value="active">Active Only ({activeCount})</option>
+            <option value="archived">Archived Only ({products.length - activeCount})</option>
           </select>
 
           {(brandFilter !== 'all' || collectionFilter !== 'all' || statusFilter !== 'all' || searchQuery) && (
@@ -374,129 +384,133 @@ export default function ProductTab() {
                 setStatusFilter('all')
                 setSearchQuery('')
               }}
-              className="text-orange-600 hover:text-orange-700 h-7 px-2 text-xs"
+              className="text-orange-700 hover:text-orange-800 hover:bg-orange-50 h-7 px-2.5 text-xs font-semibold"
             >
               Reset Filters
             </Button>
           )}
 
-          <span className="ml-auto text-slate-400 font-medium">
-            Showing {filteredProducts.length} of {products.length} designs
+          <span className="ml-auto text-stone-500 font-medium">
+            Showing <strong className="text-stone-900">{filteredProducts.length}</strong> of {products.length} designs
           </span>
         </div>
       </div>
 
       {/* Products Table */}
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 text-xs font-semibold uppercase tracking-wider">
-              <tr>
-                <th className="px-4 py-3 text-left w-16">Photo</th>
-                <th className="px-4 py-3 text-left">Design No</th>
-                <th className="px-4 py-3 text-left">Brand & Collection</th>
-                <th className="px-4 py-3 text-left">Fabric</th>
-                <th className="px-4 py-3 text-right">Rate</th>
-                <th className="px-4 py-3 text-center">Set Specs</th>
-                <th className="px-4 py-3 text-center">Status</th>
-                <th className="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {loading ? (
+      <div className="bg-white border border-stone-200/80 rounded-xl overflow-hidden shadow-2xs">
+        {loading ? (
+          <LoadingState message="Loading product catalog..." />
+        ) : filteredProducts.length === 0 ? (
+          <EmptyState
+            icon={<Package className="w-6 h-6" />}
+            title="No designs match your criteria"
+            description="Try clearing your search filters or register a new textile design in the catalog."
+            action={
+              <Button onClick={openCreateForm} size="sm">
+                <Plus className="w-4 h-4 mr-1.5" /> Add Product Design
+              </Button>
+            }
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-stone-50 border-b border-stone-200/80 text-stone-600 text-[11px] font-semibold uppercase tracking-wider">
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">Loading catalog...</td>
+                  <th className="px-4 py-3 text-left w-16">Photo</th>
+                  <th className="px-4 py-3 text-left">Design No</th>
+                  <th className="px-4 py-3 text-left">Brand & Collection</th>
+                  <th className="px-4 py-3 text-left">Fabric</th>
+                  <th className="px-4 py-3 text-right">Wholesale Rate</th>
+                  <th className="px-4 py-3 text-center">Set Ratio</th>
+                  <th className="px-4 py-3 text-center">Status</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
-              ) : filteredProducts.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
-                    No products found matching criteria.
-                  </td>
-                </tr>
-              ) : (
-                filteredProducts.map((p) => (
-                  <tr key={p.id} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="px-4 py-2.5">
+              </thead>
+              <tbody className="divide-y divide-stone-100">
+                {filteredProducts.map((p) => (
+                  <tr key={p.id} className="hover:bg-stone-50/70 transition-colors">
+                    <td className="px-4 py-3">
                       {p.image_url ? (
-                        <img
-                          src={p.image_url}
-                          alt={p.design_no}
-                          className="w-12 h-12 object-cover rounded-lg border border-slate-200 cursor-pointer hover:opacity-90"
+                        <button
+                          type="button"
                           onClick={() => {
                             setMediaProduct(p)
                             setShowMediaDialog(true)
                           }}
-                        />
+                          title="Manage Media Gallery"
+                          className="block rounded-lg overflow-hidden border border-stone-200 focus:outline-none focus:ring-2 focus:ring-orange-600/30"
+                        >
+                          <img
+                            src={p.image_url}
+                            alt={`Design ${p.design_no}`}
+                            className="w-12 h-12 object-cover hover:opacity-90 transition-opacity"
+                          />
+                        </button>
                       ) : (
-                        <div
-                          className="w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 border border-dashed border-slate-300 cursor-pointer hover:bg-slate-200"
+                        <button
+                          type="button"
                           onClick={() => {
                             setMediaProduct(p)
                             setShowMediaDialog(true)
                           }}
+                          title="Upload Photos"
+                          className="w-12 h-12 bg-stone-100 rounded-lg flex items-center justify-center text-stone-400 border border-dashed border-stone-300 hover:bg-stone-200/70 transition-colors"
                         >
                           <ImageIcon className="w-5 h-5" />
-                        </div>
+                        </button>
                       )}
                     </td>
-                    <td className="px-4 py-2.5">
+                    <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
-                        <span className="font-extrabold text-slate-900 text-base">{p.design_no}</span>
+                        <span className="font-bold text-stone-900 text-base tracking-tight">#{p.design_no}</span>
                       </div>
                       <a
-                        href={`/p/${p.design_no}`}
+                        href={`/${activeSlug}/p/${encodeURIComponent(p.design_no)}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-[11px] text-orange-600 hover:underline flex items-center gap-0.5 mt-0.5 font-medium"
+                        className="text-[11px] text-orange-700 hover:text-orange-800 hover:underline inline-flex items-center gap-1 mt-0.5 font-medium"
                       >
-                        <Eye className="w-3 h-3" /> View Public Page
+                        <Eye className="w-3 h-3" /> Public Page
                       </a>
                     </td>
-                    <td className="px-4 py-2.5">
-                      <p className="font-medium text-slate-800">{p.brand || '-'}</p>
+                    <td className="px-4 py-3">
+                      <p className="font-semibold text-stone-800">{p.brand || '—'}</p>
                       {p.collection_name && (
-                        <p className="text-xs text-slate-500">{p.collection_name}</p>
+                        <p className="text-xs text-stone-500 mt-0.5">{p.collection_name}</p>
                       )}
                     </td>
-                    <td className="px-4 py-2.5 text-slate-600 font-medium">{p.fabric || '-'}</td>
-                    <td className="px-4 py-2.5 text-right font-bold text-slate-900">
-                      {p.rate ? formatCurrency(p.rate) : '-'}
+                    <td className="px-4 py-3 text-stone-600 font-medium">{p.fabric || '—'}</td>
+                    <td className="px-4 py-3 text-right font-bold text-stone-900 tabular-nums">
+                      {p.rate ? formatCurrency(p.rate) : 'On Request'}
                     </td>
-                    <td className="px-4 py-2.5 text-center text-slate-600 text-xs">
-                      <span className="bg-slate-100 px-2 py-1 rounded font-mono font-medium">
+                    <td className="px-4 py-3 text-center text-stone-700 text-xs">
+                      <span className="bg-stone-100 border border-stone-200/80 px-2.5 py-1 rounded-md font-mono font-semibold">
                         {p.pcs_per_set || 1} pcs/set
                       </span>
                     </td>
-                    <td className="px-4 py-2.5 text-center">
+                    <td className="px-4 py-3 text-center">
                       <button
+                        type="button"
                         onClick={() => handleToggleStatus(p)}
-                        className={`text-xs px-2.5 py-1 rounded-full font-semibold border transition-colors inline-flex items-center gap-1 ${
-                          p.is_active !== false
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                            : 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200'
-                        }`}
+                        title="Click to toggle catalog status"
+                        className="inline-flex focus:outline-none focus:ring-2 focus:ring-orange-600/30 rounded-md"
                       >
-                        {p.is_active !== false ? (
-                          <>
-                            <CheckCircle2 className="w-3 h-3" /> Active
-                          </>
-                        ) : (
-                          <>
-                            <XCircle className="w-3 h-3" /> Archived
-                          </>
-                        )}
+                        <StatusBadge
+                          status={p.is_active !== false ? 'active' : 'archived'}
+                          className="cursor-pointer hover:opacity-85 transition-opacity"
+                        />
                       </button>
                     </td>
-                    <td className="px-4 py-2.5 text-right">
+                    <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <Button
                           variant="ghost"
                           size="sm"
                           title="QR Code & Label"
                           onClick={() => handleOpenQrModal(p)}
-                          className="h-8 w-8 p-0 text-slate-600 hover:text-slate-900"
+                          className="h-8 w-8 p-0 text-orange-700 hover:text-orange-800 hover:bg-orange-50"
                         >
-                          <QrCode className="w-4 h-4 text-orange-600" />
+                          <QrCode className="w-4 h-4" />
                         </Button>
                         <Button
                           variant="ghost"
@@ -506,7 +520,7 @@ export default function ProductTab() {
                             setMediaProduct(p)
                             setShowMediaDialog(true)
                           }}
-                          className="h-8 w-8 p-0 text-slate-600 hover:text-slate-900"
+                          className="h-8 w-8 p-0 text-stone-600 hover:text-stone-900"
                         >
                           <ImageIcon className="w-4 h-4" />
                         </Button>
@@ -515,7 +529,7 @@ export default function ProductTab() {
                           size="sm"
                           title="Edit Product"
                           onClick={() => openEditForm(p)}
-                          className="h-8 w-8 p-0 text-slate-600 hover:text-slate-900"
+                          className="h-8 w-8 p-0 text-stone-600 hover:text-stone-900"
                         >
                           <Edit2 className="w-4 h-4" />
                         </Button>
@@ -524,50 +538,52 @@ export default function ProductTab() {
                           size="sm"
                           title="Delete Product"
                           onClick={() => setDeleteConfirm(p.id)}
-                          className="h-8 w-8 p-0 text-rose-500 hover:text-rose-700"
+                          className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
                         >
                           <Trash2 className="w-4 h-4" />
                         </Button>
                       </div>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Create / Edit Product Modal */}
       <Dialog open={showForm} onOpenChange={setShowForm}>
         <DialogContent className="sm:max-w-[560px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-xl font-bold">
-              {editingProduct ? `Edit Product — ${editingProduct.design_no}` : 'Add New Textile Product'}
+            <DialogTitle className="text-lg font-bold text-stone-900">
+              {editingProduct ? `Edit Product — Design #${editingProduct.design_no}` : 'Add New Textile Design'}
             </DialogTitle>
           </DialogHeader>
 
           <form onSubmit={handleSaveProduct} className="space-y-4 pt-2">
             {formError && (
-              <p className="text-xs font-semibold text-rose-600 bg-rose-50 p-3 rounded-lg border border-rose-200">
+              <p className="text-xs font-semibold text-red-700 bg-red-50 p-3 rounded-lg border border-red-200">
                 {formError}
               </p>
             )}
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div className="space-y-1.5">
-                <Label>Design Number *</Label>
+                <Label htmlFor="prod-design-no">Design Number *</Label>
                 <Input
+                  id="prod-design-no"
                   value={formDesignNo}
                   onChange={(e) => setFormDesignNo(e.target.value.toUpperCase())}
                   placeholder="e.g. 4955"
                   required
-                  className="font-bold text-slate-900"
+                  className="font-bold text-stone-900"
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>Wholesale Rate (₹/pc)</Label>
+                <Label htmlFor="prod-rate">Wholesale Rate (₹/pc)</Label>
                 <Input
+                  id="prod-rate"
                   type="number"
                   step="0.01"
                   value={formRate}
@@ -577,26 +593,29 @@ export default function ProductTab() {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
               <div className="space-y-1.5">
-                <Label>Brand</Label>
+                <Label htmlFor="prod-brand">Brand</Label>
                 <Input
+                  id="prod-brand"
                   value={formBrand}
                   onChange={(e) => setFormBrand(e.target.value)}
-                  placeholder="e.g. Rangoli"
+                  placeholder="e.g. Kala"
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>Collection</Label>
+                <Label htmlFor="prod-collection">Collection</Label>
                 <Input
+                  id="prod-collection"
                   value={formCollection}
                   onChange={(e) => setFormCollection(e.target.value)}
                   placeholder="e.g. Silk Edition"
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>Fabric</Label>
+                <Label htmlFor="prod-fabric">Fabric</Label>
                 <Input
+                  id="prod-fabric"
                   value={formFabric}
                   onChange={(e) => setFormFabric(e.target.value)}
                   placeholder="e.g. Pure Cotton"
@@ -604,10 +623,11 @@ export default function ProductTab() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div className="space-y-1.5">
-                <Label>Pieces Per Set</Label>
+                <Label htmlFor="prod-pcs-per-set">Pieces Per Set</Label>
                 <Input
+                  id="prod-pcs-per-set"
                   type="number"
                   min="1"
                   value={formPcsPerSet}
@@ -615,35 +635,36 @@ export default function ProductTab() {
                   placeholder="1"
                 />
               </div>
-              <div className="flex items-center gap-2 pt-6">
+              <div className="flex items-center gap-2.5 sm:pt-6">
                 <input
                   type="checkbox"
                   id="prod-is-active"
                   checked={formIsActive}
                   onChange={(e) => setFormIsActive(e.target.checked)}
-                  className="w-4 h-4 rounded text-orange-600 border-slate-300"
+                  className="w-4 h-4 rounded text-orange-700 border-stone-300 focus:ring-orange-600"
                 />
-                <Label htmlFor="prod-is-active" className="cursor-pointer text-sm font-medium">
-                  Active in Catalog
+                <Label htmlFor="prod-is-active" className="cursor-pointer text-sm font-medium text-stone-800">
+                  Active in Public Catalog
                 </Label>
               </div>
             </div>
 
             <div className="space-y-1.5">
-              <Label>Description / Work Notes</Label>
+              <Label htmlFor="prod-description">Description / Work Notes</Label>
               <textarea
+                id="prod-description"
                 value={formDescription}
                 onChange={(e) => setFormDescription(e.target.value)}
                 placeholder="Product specifications, embroidery details, wash care..."
                 rows={2}
-                className="w-full text-sm rounded-md border border-slate-200 bg-white p-2.5 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                className="w-full text-sm rounded-lg border border-stone-300 bg-white p-2.5 focus:outline-none focus:ring-2 focus:ring-orange-600/20 focus:border-orange-700"
               />
             </div>
 
             {/* Media Upload & Preview */}
-            <div className="space-y-2 border-t pt-3">
+            <div className="space-y-2.5 border-t border-stone-200/80 pt-3.5">
               <div className="flex justify-between items-center">
-                <Label className="text-slate-800 font-semibold">Product Photographs & Videos</Label>
+                <Label className="text-stone-800 font-semibold">Product Photographs & Videos</Label>
                 <Button
                   type="button"
                   variant="outline"
@@ -664,12 +685,12 @@ export default function ProductTab() {
               </div>
 
               {stagedFiles.length > 0 && (
-                <div className="grid grid-cols-4 gap-2.5 pt-2">
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 pt-2">
                   {stagedFiles.map((sf) => (
                     <div
                       key={sf.id}
-                      className={`relative rounded-lg overflow-hidden border-2 group aspect-square bg-slate-100 ${
-                        sf.isPrimary ? 'border-orange-500 ring-2 ring-orange-200' : 'border-slate-200'
+                      className={`relative rounded-lg overflow-hidden border-2 group aspect-square bg-stone-100 ${
+                        sf.isPrimary ? 'border-orange-600 ring-2 ring-orange-200' : 'border-stone-200'
                       }`}
                     >
                       {sf.type === 'video' ? (
@@ -678,15 +699,15 @@ export default function ProductTab() {
                         <img src={sf.preview} alt="" className="w-full h-full object-cover" />
                       )}
 
-                      {/* Controls overlay */}
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5">
+                      {/* Controls overlay — always accessible on touch devices, hover on desktop */}
+                      <div className="absolute inset-0 bg-black/40 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex items-end sm:items-center justify-between sm:justify-center p-1.5 gap-1.5">
                         {sf.type === 'image' && (
                           <button
                             type="button"
-                            title="Set as primary"
+                            title="Set as primary photo"
                             onClick={() => setPrimaryStaged(sf.id)}
-                            className={`p-1.5 rounded-full ${
-                              sf.isPrimary ? 'bg-orange-500 text-white' : 'bg-white/80 hover:bg-white text-slate-800'
+                            className={`p-1.5 rounded-full shadow-xs ${
+                              sf.isPrimary ? 'bg-orange-600 text-white' : 'bg-white/90 hover:bg-white text-stone-800'
                             }`}
                           >
                             <Star className="w-3.5 h-3.5" />
@@ -694,21 +715,21 @@ export default function ProductTab() {
                         )}
                         <button
                           type="button"
-                          title="Remove"
+                          title="Remove file"
                           onClick={() => removeStagedFile(sf.id)}
-                          className="p-1.5 rounded-full bg-rose-500 text-white hover:bg-rose-600"
+                          className="p-1.5 rounded-full bg-red-600 text-white hover:bg-red-700 shadow-xs ml-auto sm:ml-0"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
 
                       {sf.isPrimary && (
-                        <div className="absolute top-1 left-1 bg-orange-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow">
+                        <div className="absolute top-1 left-1 bg-orange-700 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-xs">
                           PRIMARY
                         </div>
                       )}
                       {sf.type === 'video' && (
-                        <div className="absolute bottom-1 right-1 bg-black/60 text-white p-0.5 rounded">
+                        <div className="absolute top-1 right-1 bg-black/60 text-white p-0.5 rounded">
                           <Film className="w-3 h-3" />
                         </div>
                       )}
@@ -718,12 +739,12 @@ export default function ProductTab() {
               )}
             </div>
 
-            <div className="flex justify-end gap-2 pt-4 border-t">
+            <div className="flex justify-end gap-2 pt-4 border-t border-stone-200/80">
               <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={formSaving} className="bg-slate-900 hover:bg-slate-800 text-white">
-                {formSaving ? 'Saving Product...' : editingProduct ? 'Update Product' : 'Create Product'}
+              <Button type="submit" disabled={formSaving} className="bg-orange-700 hover:bg-orange-800 text-white">
+                {formSaving ? 'Saving Design...' : editingProduct ? 'Update Product' : 'Create Product'}
               </Button>
             </div>
           </form>
@@ -734,38 +755,38 @@ export default function ProductTab() {
       <Dialog open={previewQrProduct !== null} onOpenChange={() => setPreviewQrProduct(null)}>
         <DialogContent className="sm:max-w-[420px]">
           <DialogHeader>
-            <DialogTitle className="text-xl font-bold">
-              Product QR Label — {previewQrProduct?.design_no}
+            <DialogTitle className="text-lg font-bold text-stone-900">
+              Product QR Label — Design #{previewQrProduct?.design_no}
             </DialogTitle>
           </DialogHeader>
 
           {previewQrProduct && previewQrDataUrl && (
             <div className="space-y-4 py-2 text-center">
-              <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-2xs inline-block mx-auto">
+              <div className="p-4 bg-white border border-stone-200 rounded-xl shadow-2xs inline-block mx-auto">
                 <img
                   src={previewQrDataUrl}
                   alt={`QR for ${previewQrProduct.design_no}`}
                   className="w-48 h-48 mx-auto"
                 />
-                <p className="text-xs font-mono text-slate-400 mt-2">
-                  /p/{previewQrProduct.design_no}
+                <p className="text-xs font-mono text-stone-500 mt-2">
+                  /{activeSlug}/p/{previewQrProduct.design_no}
                 </p>
               </div>
 
-              <div className="text-xs text-slate-500">
-                This QR code permanently routes to the public catalog page. It remains valid even after price or photo changes.
+              <div className="text-xs text-stone-500 leading-relaxed">
+                This QR code permanently routes buyers and shop staff to Design #{previewQrProduct.design_no}. It remains valid even after price or photo updates.
               </div>
 
-              <div className="flex gap-2 pt-2">
+              <div className="flex gap-2.5 pt-2">
                 <Button
                   variant="outline"
                   className="flex-1"
                   onClick={() => downloadQRCode(previewQrDataUrl, `QR_${previewQrProduct.design_no}`)}
                 >
-                  <Download className="w-4 h-4 mr-1.5" /> Download QR
+                  <Download className="w-4 h-4 mr-1.5" /> Download PNG
                 </Button>
                 <Button
-                  className="flex-1 bg-slate-900 hover:bg-slate-800 text-white"
+                  className="flex-1 bg-stone-900 hover:bg-stone-800 text-white"
                   onClick={() => handlePrintLabel(previewQrProduct, previewQrDataUrl)}
                 >
                   <Printer className="w-4 h-4 mr-1.5" /> Print Label
@@ -792,18 +813,18 @@ export default function ProductTab() {
       <AlertDialog open={deleteConfirm !== null} onOpenChange={() => setDeleteConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Product</AlertDialogTitle>
+            <AlertDialogTitle>Delete Product Design</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to permanently delete this design and its associated media files?
+              Are you sure you want to permanently delete this design and its associated media files? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex justify-end gap-2">
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteConfirm && handleDelete(deleteConfirm)}
-              className="bg-rose-600 hover:bg-rose-700"
+              className="bg-red-700 hover:bg-red-800 text-white"
             >
-              Delete
+              Delete Product
             </AlertDialogAction>
           </div>
         </AlertDialogContent>

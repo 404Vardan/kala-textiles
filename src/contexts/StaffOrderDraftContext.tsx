@@ -2,7 +2,8 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { useAuth } from './AuthContext'
 import type { Product, StaffOrderDraft, StaffOrderHeaderDraft, StaffOrderItemDraft } from '@/types'
 
-const STAFF_DRAFT_PREFIX = 'rangoli:staff-order-draft:'
+const STAFF_DRAFT_PREFIX = 'kala:staff-order-draft:'
+const LEGACY_STAFF_DRAFT_PREFIX = 'rangoli:staff-order-draft:'
 
 function getTodayDateString(): string {
   return new Date().toISOString().slice(0, 10)
@@ -49,9 +50,14 @@ export function StaffOrderDraftProvider({ children }: { children: React.ReactNod
     return `${STAFF_DRAFT_PREFIX}${user.id}:${business.id}`
   }, [user?.id, business?.id])
 
+  const legacyStorageKey = useMemo(() => {
+    if (!user?.id || !business?.id) return null
+    return `${LEGACY_STAFF_DRAFT_PREFIX}${user.id}:${business.id}`
+  }, [user?.id, business?.id])
+
   const [draft, setDraft] = useState<StaffOrderDraft>(() => createEmptyDraft())
 
-  // Load draft whenever user or business changes
+  // Load draft whenever user or business changes (with automatic migration from legacy key)
   useEffect(() => {
     if (!storageKey || typeof window === 'undefined') {
       setDraft(createEmptyDraft())
@@ -59,7 +65,20 @@ export function StaffOrderDraftProvider({ children }: { children: React.ReactNod
     }
 
     try {
-      const raw = window.localStorage.getItem(storageKey)
+      let raw = window.localStorage.getItem(storageKey)
+      if (!raw && legacyStorageKey) {
+        const legacyRaw = window.localStorage.getItem(legacyStorageKey)
+        if (legacyRaw) {
+          raw = legacyRaw
+          try {
+            window.localStorage.setItem(storageKey, legacyRaw)
+            window.localStorage.removeItem(legacyStorageKey)
+          } catch {
+            // Ignore migration write errors
+          }
+        }
+      }
+
       if (!raw) {
         setDraft(createEmptyDraft())
         return
@@ -108,7 +127,7 @@ export function StaffOrderDraftProvider({ children }: { children: React.ReactNod
     } catch {
       setDraft(createEmptyDraft())
     }
-  }, [storageKey])
+  }, [storageKey, legacyStorageKey])
 
   const persistDraft = useCallback(
     (updater: (prev: StaffOrderDraft) => StaffOrderDraft) => {
@@ -120,6 +139,10 @@ export function StaffOrderDraftProvider({ children }: { children: React.ReactNod
 
         if (storageKey && typeof window !== 'undefined') {
           try {
+            if (legacyStorageKey) {
+              window.localStorage.removeItem(legacyStorageKey)
+            }
+
             const isEmpty =
               next.items.length === 0 &&
               !next.partyName.trim() &&
@@ -143,7 +166,7 @@ export function StaffOrderDraftProvider({ children }: { children: React.ReactNod
         return next
       })
     },
-    [storageKey]
+    [storageKey, legacyStorageKey]
   )
 
   const updateHeader = useCallback(
@@ -259,14 +282,15 @@ export function StaffOrderDraftProvider({ children }: { children: React.ReactNod
   const clearDraft = useCallback(() => {
     const empty = createEmptyDraft()
     setDraft(empty)
-    if (storageKey && typeof window !== 'undefined') {
+    if (typeof window !== 'undefined') {
       try {
-        window.localStorage.removeItem(storageKey)
+        if (storageKey) window.localStorage.removeItem(storageKey)
+        if (legacyStorageKey) window.localStorage.removeItem(legacyStorageKey)
       } catch {
         // Ignore storage errors
       }
     }
-  }, [storageKey])
+  }, [storageKey, legacyStorageKey])
 
   const totalDesigns = draft.items.length
   const totalSets = useMemo(
@@ -316,4 +340,3 @@ export function useStaffOrderDraft() {
   }
   return ctx
 }
-

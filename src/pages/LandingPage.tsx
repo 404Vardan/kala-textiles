@@ -13,7 +13,17 @@ import type { Product } from '@/types'
 import { useQRScanner } from '@/hooks/useQRScanner'
 import { parseProductQRUrl } from '@/utils/qrcode'
 import { useAuth } from '@/contexts/AuthContext'
-import { QrCode, ShoppingCart, Shield, Search, X, Camera, Zap } from 'lucide-react'
+import { KalaLogo } from '@/components/common/KalaLogo'
+import {
+  QrCode,
+  ShoppingCart,
+  Shield,
+  Search,
+  X,
+  Camera,
+  ArrowRight,
+  Package,
+} from 'lucide-react'
 
 export default function LandingPage() {
   const navigate = useNavigate()
@@ -27,7 +37,6 @@ export default function LandingPage() {
   const activeSlug = business?.slug || 'rangoli'
 
   useEffect(() => {
-    // Preload products for search when authenticated
     if (!user) return
     fetchProducts(500).then(setProducts).catch(() => {})
   }, [user])
@@ -41,7 +50,6 @@ export default function LandingPage() {
     }
   }, [searchQuery, products])
 
-  // Ultra-fast QR scanner via native BarcodeDetector API
   const handleQRScan = useCallback(
     (text: string) => {
       const parsed = parseProductQRUrl(text, activeSlug)
@@ -60,21 +68,10 @@ export default function LandingPage() {
     cooldownMs: 500,
   })
 
-  const handleScanQR = () => {
-    setShowScanner(true)
-  }
-
-  const handleCloseScanner = () => {
-    setShowScanner(false)
-  }
-
-  const handleCreateOrder = () => {
-    navigate('/staff')
-  }
-
-  const handleAdminAccess = () => {
-    navigate('/admin')
-  }
+  const handleScanQR = () => setShowScanner(true)
+  const handleCloseScanner = () => setShowScanner(false)
+  const handleCreateOrder = () => navigate('/staff')
+  const handleAdminAccess = () => navigate('/admin')
 
   const handleSelectDesign = (designNo: string) => {
     const clean = designNo.trim()
@@ -85,70 +82,136 @@ export default function LandingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-rose-50 relative overflow-hidden">
-      {/* Decorative background */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-orange-200/30 to-rose-200/30 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-gradient-to-tr from-amber-200/30 to-orange-200/30 rounded-full blur-3xl" />
-      </div>
+    <div className="min-h-screen bg-[#f8f7f4] text-stone-900 flex flex-col justify-between">
+      {/* Top Bar */}
+      <header className="bg-white border-b border-stone-200">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+          <KalaLogo
+            size="md"
+            subtitle="Textile Wholesale Management System"
+          />
 
-      <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-4 py-8">
-        {/* Logo / Brand */}
-        <div className="text-center mb-10 animate-fade-in">
-          <h1 className="text-5xl sm:text-6xl font-extrabold bg-gradient-to-r from-orange-600 via-rose-600 to-amber-600 bg-clip-text text-transparent tracking-tight">
-            Rangoli Textiles
-          </h1>
-          <p className="mt-3 text-lg text-gray-500 font-medium">Premium Fabric Collection</p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleScanQR}
+              className="gap-1.5"
+            >
+              <QrCode className="w-4 h-4 text-orange-700" />
+              <span>Scan QR</span>
+            </Button>
+          </div>
         </div>
+      </header>
 
-        {/* Action Buttons */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-lg mb-8">
-          <button
-            onClick={handleScanQR}
-            className="group flex flex-col items-center gap-3 p-6 rounded-2xl bg-white/80 backdrop-blur-sm border border-orange-100 shadow-lg hover:shadow-xl hover:border-orange-300 transition-all duration-300 hover:-translate-y-1"
-          >
-            <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-orange-500 to-rose-500 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-              <QrCode className="w-7 h-7 text-white" />
-            </div>
-            <span className="font-semibold text-gray-700">Scan QR</span>
-          </button>
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 py-10 sm:py-16">
+        <div className="w-full max-w-2xl space-y-8">
+          {/* Brand Heading */}
+          <div className="text-center space-y-2.5">
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-orange-800 bg-orange-50 border border-orange-200 px-3 py-1 rounded-full">
+              <Package className="w-3.5 h-3.5" /> Textile Wholesale Management System
+            </span>
+            <h1 className="text-3xl sm:text-4xl font-extrabold text-stone-900 tracking-tight">
+              Kala
+            </h1>
+            <p className="text-sm sm:text-base text-stone-600 max-w-md mx-auto">
+              Scan product QR labels, browse wholesale design specifications, or access staff and
+              management operations.
+            </p>
+          </div>
 
-          <button
-            onClick={handleCreateOrder}
-            className="group flex flex-col items-center gap-3 p-6 rounded-2xl bg-white/80 backdrop-blur-sm border border-orange-100 shadow-lg hover:shadow-xl hover:border-orange-300 transition-all duration-300 hover:-translate-y-1"
-          >
-            <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-              <ShoppingCart className="w-7 h-7 text-white" />
-            </div>
-            <span className="font-semibold text-gray-700">Create Order</span>
-          </button>
+          {/* Primary Search Trigger */}
+          <div className="bg-white p-2 rounded-xl border border-stone-300 shadow-2xs">
+            <button
+              type="button"
+              onClick={() => setShowSearch(true)}
+              className="w-full flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-lg hover:bg-stone-50 transition-colors text-left cursor-pointer"
+            >
+              <div className="flex items-center gap-3 text-stone-500">
+                <Search className="w-4 h-4 text-stone-400 shrink-0" />
+                <span className="text-sm">Lookup design number (e.g. 4955)...</span>
+              </div>
+              <span className="text-xs font-semibold text-orange-700 bg-orange-50 px-2.5 py-1 rounded-md border border-orange-200/70">
+                Search
+              </span>
+            </button>
+          </div>
 
-          <button
-            onClick={handleAdminAccess}
-            className="group flex flex-col items-center gap-3 p-6 rounded-2xl bg-white/80 backdrop-blur-sm border border-orange-100 shadow-lg hover:shadow-xl hover:border-orange-300 transition-all duration-300 hover:-translate-y-1"
-          >
-            <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-rose-500 to-red-500 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-              <Shield className="w-7 h-7 text-white" />
-            </div>
-            <span className="font-semibold text-gray-700">Admin Access</span>
-          </button>
+          {/* Core Operational Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <button
+              type="button"
+              onClick={handleScanQR}
+              className="group flex flex-col justify-between p-5 rounded-xl bg-white border border-stone-200 shadow-2xs hover:border-orange-700/60 hover:shadow-sm transition-all text-left cursor-pointer"
+            >
+              <div className="w-10 h-10 rounded-lg bg-orange-50 border border-orange-200/80 text-orange-700 flex items-center justify-center mb-4">
+                <QrCode className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-stone-900 text-base">Scan QR</span>
+                  <ArrowRight className="w-4 h-4 text-stone-400 group-hover:text-orange-700 transition-colors" />
+                </div>
+                <p className="text-xs text-stone-500 mt-1">
+                  Scan a product label to view design details and request sets
+                </p>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleCreateOrder}
+              className="group flex flex-col justify-between p-5 rounded-xl bg-white border border-stone-200 shadow-2xs hover:border-stone-400 hover:shadow-sm transition-all text-left cursor-pointer"
+            >
+              <div className="w-10 h-10 rounded-lg bg-stone-100 border border-stone-200 text-stone-800 flex items-center justify-center mb-4">
+                <ShoppingCart className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-stone-900 text-base">Create Order</span>
+                  <ArrowRight className="w-4 h-4 text-stone-400 group-hover:text-stone-900 transition-colors" />
+                </div>
+                <p className="text-xs text-stone-500 mt-1">
+                  Staff terminal for floor scanning, stock check, and order drafting
+                </p>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleAdminAccess}
+              className="group flex flex-col justify-between p-5 rounded-xl bg-white border border-stone-200 shadow-2xs hover:border-stone-400 hover:shadow-sm transition-all text-left cursor-pointer"
+            >
+              <div className="w-10 h-10 rounded-lg bg-stone-100 border border-stone-200 text-stone-800 flex items-center justify-center mb-4">
+                <Shield className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-stone-900 text-base">Admin Access</span>
+                  <ArrowRight className="w-4 h-4 text-stone-400 group-hover:text-stone-900 transition-colors" />
+                </div>
+                <p className="text-xs text-stone-500 mt-1">
+                  Manage catalog, Godown stock, buyer requests, and parties
+                </p>
+              </div>
+            </button>
+          </div>
         </div>
+      </main>
 
-        {/* Design Lookup */}
-        <div className="w-full max-w-lg">
-          <button
-            onClick={() => setShowSearch(true)}
-            className="w-full flex items-center gap-3 px-5 py-3.5 rounded-xl bg-white/80 backdrop-blur-sm border border-gray-200 shadow-md hover:shadow-lg hover:border-orange-300 transition-all text-gray-400 text-left"
-          >
-            <Search className="w-5 h-5" />
-            <span>Search design number...</span>
-          </button>
-        </div>
-      </div>
+      {/* Footer */}
+      <footer className="border-t border-stone-200 bg-white py-4 px-4 text-center text-xs text-stone-500">
+        © {new Date().getFullYear()} Kala • Textile Wholesale Management System
+      </footer>
 
-      {/* Search Dialog (cmdk-style) */}
+      {/* Search Dialog */}
       <Dialog open={showSearch} onOpenChange={setShowSearch}>
         <DialogContent className="sm:max-w-md p-0 gap-0 overflow-hidden">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Search Design Number</DialogTitle>
+          </DialogHeader>
           <form
             onSubmit={(e) => {
               e.preventDefault()
@@ -156,60 +219,69 @@ export default function LandingPage() {
                 handleSelectDesign(searchQuery.trim())
               }
             }}
-            className="flex items-center gap-2 px-4 border-b"
+            className="flex items-center gap-2 px-4 py-1 border-b border-stone-200 bg-stone-50"
           >
-            <Search className="w-5 h-5 text-gray-400 shrink-0" />
+            <Search className="w-4 h-4 text-stone-400 shrink-0" />
             <Input
-              placeholder="Type design number..."
+              placeholder="Enter design number..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="border-0 shadow-none focus-visible:ring-0 text-base py-4"
+              className="border-0 bg-transparent shadow-none focus-visible:ring-0 text-sm h-11 px-1"
               autoFocus
             />
             {searchQuery && (
-              <button type="button" onClick={() => setSearchQuery('')} className="shrink-0">
-                <X className="w-4 h-4 text-gray-400" />
+              <button
+                type="button"
+                aria-label="Clear search query"
+                onClick={() => setSearchQuery('')}
+                className="p-1 text-stone-400 hover:text-stone-700"
+              >
+                <X className="w-4 h-4" />
               </button>
             )}
           </form>
-          <div className="max-h-72 overflow-y-auto">
+          <div className="max-h-72 overflow-y-auto divide-y divide-stone-100">
             {searchQuery.trim() && (
               <button
                 type="button"
                 onClick={() => handleSelectDesign(searchQuery.trim())}
-                className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-orange-50/60 hover:bg-orange-100/70 border-b transition-colors text-left"
+                className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-orange-50/70 hover:bg-orange-100/70 transition-colors text-left cursor-pointer"
               >
-                <div className="flex items-center gap-3">
-                  <QrCode className="w-4 h-4 text-orange-600 shrink-0" />
-                  <span className="font-semibold text-orange-800">
-                    Open design "{searchQuery.trim()}"
+                <div className="flex items-center gap-2.5">
+                  <QrCode className="w-4 h-4 text-orange-700 shrink-0" />
+                  <span className="font-semibold text-sm text-orange-900">
+                    Open Design "{searchQuery.trim().toUpperCase()}"
                   </span>
                 </div>
-                <span className="text-xs font-medium text-orange-600">View →</span>
+                <span className="text-xs font-semibold text-orange-800">View →</span>
               </button>
             )}
             {filteredProducts.length === 0 ? (
               !searchQuery.trim() && (
-                <div className="py-8 text-center text-gray-400 text-sm">
-                  Type a design number above to view its catalog page
+                <div className="py-8 px-4 text-center text-stone-500 text-xs sm:text-sm">
+                  Type a design number above and press Enter to open its catalog page.
                 </div>
               )
             ) : (
               filteredProducts.map((product) => (
                 <button
                   key={product.id}
+                  type="button"
                   onClick={() => handleSelectDesign(product.design_no)}
-                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-orange-50 transition-colors text-left"
+                  className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-stone-50 transition-colors text-left cursor-pointer"
                 >
-                  <QrCode className="w-4 h-4 text-orange-500 shrink-0" />
-                  <div>
-                    <p className="font-medium text-gray-900">{product.design_no}</p>
-                    <p className="text-xs text-gray-500">
-                      {[product.brand, product.collection_name, product.fabric]
-                        .filter(Boolean)
-                        .join(' • ') || 'No details'}
-                    </p>
+                  <div className="flex items-center gap-3">
+                    <QrCode className="w-4 h-4 text-orange-700 shrink-0" />
+                    <div>
+                      <p className="font-bold text-sm text-stone-900">{product.design_no}</p>
+                      <p className="text-xs text-stone-500">
+                        {[product.brand, product.collection_name, product.fabric]
+                          .filter(Boolean)
+                          .join(' • ') || 'Catalog Design'}
+                      </p>
+                    </div>
                   </div>
+                  <ArrowRight className="w-4 h-4 text-stone-400" />
                 </button>
               ))
             )}
@@ -227,29 +299,26 @@ export default function LandingPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Camera className="w-5 h-5" />
-              Scan QR Code
+              <Camera className="w-5 h-5 text-orange-700" />
+              Scan Product QR Code
             </DialogTitle>
           </DialogHeader>
-          <div className="relative">
-            <div id="qr-reader" className="w-full rounded-lg overflow-hidden" />
-            <div className="flex items-center justify-center gap-2 mt-2">
+          <div className="space-y-3">
+            <div className="relative rounded-xl overflow-hidden bg-stone-950 aspect-video">
+              <div id="qr-reader" className="w-full h-full" />
+            </div>
+            <div className="flex items-center justify-center gap-2 text-xs text-stone-600">
               {scannerStatus === 'scanning' && (
-                <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
-                  <Zap className="w-3 h-3" />
-                  <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-                  Ultra-fast scanning active
+                <span className="inline-flex items-center gap-1.5 text-emerald-700 font-semibold">
+                  <span className="w-2 h-2 bg-emerald-600 rounded-full" />
+                  Camera active — point at a product QR label
                 </span>
               )}
-              {scannerStatus === 'starting' && (
-                <span className="text-sm text-gray-500">Starting camera...</span>
-              )}
-              {scannerStatus === 'idle' && (
-                <span className="text-sm text-gray-500">Point camera at a product QR code</span>
-              )}
+              {scannerStatus === 'starting' && <span>Starting camera...</span>}
+              {scannerStatus === 'idle' && <span>Point camera at a product QR code</span>}
             </div>
           </div>
-          <Button variant="outline" onClick={handleCloseScanner} className="w-full mt-2">
+          <Button variant="outline" onClick={handleCloseScanner} className="w-full">
             Close Scanner
           </Button>
         </DialogContent>

@@ -1,7 +1,8 @@
 import type { OrderRequestCartItem } from '@/types'
 
-const CART_KEY_PREFIX = 'rangoli:order-request-cart:'
-export const ORDER_REQUEST_CART_EVENT = 'rangoli:order-request-cart-updated'
+const CART_KEY_PREFIX = 'kala:order-request-cart:'
+const LEGACY_CART_KEY_PREFIX = 'rangoli:order-request-cart:'
+export const ORDER_REQUEST_CART_EVENT = 'kala:order-request-cart-updated'
 
 function normalizeSlug(slug?: string): string {
   return (slug || 'rangoli').trim().toLowerCase() || 'rangoli'
@@ -9,6 +10,10 @@ function normalizeSlug(slug?: string): string {
 
 function getStorageKey(slug?: string): string {
   return `${CART_KEY_PREFIX}${normalizeSlug(slug)}`
+}
+
+function getLegacyStorageKey(slug?: string): string {
+  return `${LEGACY_CART_KEY_PREFIX}${normalizeSlug(slug)}`
 }
 
 export function clampRequestSets(sets: number): number {
@@ -33,7 +38,24 @@ export function getOrderRequestCart(slug: string = 'rangoli'): OrderRequestCartI
   if (typeof window === 'undefined') return []
 
   try {
-    const raw = window.localStorage.getItem(getStorageKey(slug))
+    const primaryKey = getStorageKey(slug)
+    const legacyKey = getLegacyStorageKey(slug)
+    let raw = window.localStorage.getItem(primaryKey)
+
+    // Backward-compatible migration from legacy key if primary key is not yet populated
+    if (!raw) {
+      const legacyRaw = window.localStorage.getItem(legacyKey)
+      if (legacyRaw) {
+        raw = legacyRaw
+        try {
+          window.localStorage.setItem(primaryKey, legacyRaw)
+          window.localStorage.removeItem(legacyKey)
+        } catch {
+          // Ignore storage write errors during migration
+        }
+      }
+    }
+
     if (!raw) return []
 
     const parsed = JSON.parse(raw)
@@ -72,10 +94,14 @@ function saveOrderRequestCart(slug: string, items: OrderRequestCartItem[]): Orde
   if (typeof window === 'undefined') return items
 
   try {
+    const primaryKey = getStorageKey(cleanSlug)
+    const legacyKey = getLegacyStorageKey(cleanSlug)
+    window.localStorage.removeItem(legacyKey)
+
     if (items.length === 0) {
-      window.localStorage.removeItem(getStorageKey(cleanSlug))
+      window.localStorage.removeItem(primaryKey)
     } else {
-      window.localStorage.setItem(getStorageKey(cleanSlug), JSON.stringify(items))
+      window.localStorage.setItem(primaryKey, JSON.stringify(items))
     }
   } catch {
     // Ignore localStorage quota / private browsing errors
@@ -163,4 +189,3 @@ export function getOrderRequestCartSummary(slug: string = 'rangoli'): {
     totalSets,
   }
 }
-

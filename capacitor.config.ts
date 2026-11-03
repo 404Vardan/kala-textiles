@@ -1,8 +1,9 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
+  // Technical appId preserved for backward compatibility with existing Android builds
   appId: 'com.rangolitextiles.app',
-  appName: 'Rangoli Textiles',
+  appName: 'Kala',
   webDir: 'dist',
   server: {
     // Allow loading from Supabase
@@ -11,7 +12,7 @@ const config: CapacitorConfig = {
   plugins: {
     SplashScreen: {
       launchShowDuration: 1500,
-      backgroundColor: '#EA580C',
+      backgroundColor: '#C2410C',
       showSpinner: false,
       launchFadeOutDuration: 500,
     },

@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
+import { SummaryCard, StatusBadge, EmptyState } from '@/components/ui/primitives'
 import { fetchDashboardSummary, fetchStockMovements } from '@/services/inventory'
 import { fetchOrders } from '@/services/orders'
+import { useAuth } from '@/contexts/AuthContext'
 import type { DashboardStats, Order, StockMovement } from '@/types'
 import { formatCurrency, formatDate, formatDateTime } from '@/utils/formatters'
 import {
@@ -13,8 +15,6 @@ import {
   ScanLine,
   Plus,
   ArrowUpRight,
-  Clock,
-  CheckCircle2,
 } from 'lucide-react'
 
 interface DashboardTabProps {
@@ -22,6 +22,9 @@ interface DashboardTabProps {
 }
 
 export default function DashboardTab({ onNavigateTab }: DashboardTabProps) {
+  const { business } = useAuth()
+  const activeSlug = (business?.slug || 'rangoli').trim().toLowerCase() || 'rangoli'
+
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [recentOrders, setRecentOrders] = useState<Order[]>([])
   const [recentMovements, setRecentMovements] = useState<StockMovement[]>([])
@@ -51,237 +54,248 @@ export default function DashboardTab({ onNavigateTab }: DashboardTabProps) {
 
   return (
     <div className="space-y-6">
-      {/* Executive KPI Metrics */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Designs */}
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
-          <div className="flex justify-between items-center text-slate-500 mb-2">
-            <span className="text-xs font-bold uppercase tracking-wider">Catalog Designs</span>
-            <div className="p-2 rounded-lg bg-slate-100 text-slate-700">
-              <Package className="w-4 h-4" />
-            </div>
-          </div>
-          <p className="text-3xl font-black text-slate-900">
-            {loading ? '...' : stats?.total_products || 0}
-          </p>
-          <p className="text-xs text-slate-500 mt-1 font-medium">
-            Active in active collection
-          </p>
-        </div>
+      {/* Operational KPI Summary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <SummaryCard
+          label="Catalog Designs"
+          value={loading ? '—' : stats?.total_products ?? 0}
+          unit="designs"
+          subtitle={
+            loading
+              ? 'Loading catalog...'
+              : `${stats?.active_products ?? 0} active • ${
+                  Math.max(0, (stats?.total_products ?? 0) - (stats?.active_products ?? 0))
+                } archived`
+          }
+          icon={Package}
+          iconClassName="bg-stone-100 text-stone-700"
+        />
 
-        {/* Godown Stock */}
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
-          <div className="flex justify-between items-center text-slate-500 mb-2">
-            <span className="text-xs font-bold uppercase tracking-wider">Godown Stock</span>
-            <div className="p-2 rounded-lg bg-blue-50 text-blue-600">
-              <Warehouse className="w-4 h-4" />
-            </div>
-          </div>
-          <p className="text-3xl font-black text-slate-900">
-            {loading ? '...' : `${stats?.godown_sets || 0} `}
-            <span className="text-sm font-normal text-slate-500">sets</span>
-          </p>
-          <p className="text-xs text-blue-600 mt-1 font-mono font-medium">
-            {stats?.godown_pcs.toLocaleString('en-IN') || 0} pieces stored
-          </p>
-        </div>
+        <SummaryCard
+          label="Godown Stock"
+          value={loading ? '—' : stats?.godown_sets ?? 0}
+          unit="sets"
+          subtitle={
+            loading
+              ? 'Loading warehouse...'
+              : `${(stats?.godown_pcs ?? 0).toLocaleString('en-IN')} pieces stored`
+          }
+          icon={Warehouse}
+          iconClassName="bg-sky-50 text-sky-700 border border-sky-200/70"
+        />
 
-        {/* Shop Stock */}
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
-          <div className="flex justify-between items-center text-slate-500 mb-2">
-            <span className="text-xs font-bold uppercase tracking-wider">Shop Stock</span>
-            <div className="p-2 rounded-lg bg-orange-50 text-orange-600">
-              <Store className="w-4 h-4" />
-            </div>
-          </div>
-          <p className="text-3xl font-black text-slate-900">
-            {loading ? '...' : `${stats?.shop_sets || 0} `}
-            <span className="text-sm font-normal text-slate-500">sets</span>
-          </p>
-          <p className="text-xs text-orange-600 mt-1 font-mono font-medium">
-            {stats?.shop_pcs.toLocaleString('en-IN') || 0} pieces ready
-          </p>
-        </div>
+        <SummaryCard
+          label="Shop Floor Stock"
+          value={loading ? '—' : stats?.shop_sets ?? 0}
+          unit="sets"
+          subtitle={
+            loading
+              ? 'Loading shop floor...'
+              : `${(stats?.shop_pcs ?? 0).toLocaleString('en-IN')} pieces ready`
+          }
+          icon={Store}
+          iconClassName="bg-orange-50 text-orange-700 border border-orange-200/70"
+        />
 
-        {/* Total Orders */}
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
-          <div className="flex justify-between items-center text-slate-500 mb-2">
-            <span className="text-xs font-bold uppercase tracking-wider">Orders</span>
-            <div className="p-2 rounded-lg bg-emerald-50 text-emerald-600">
-              <ShoppingCart className="w-4 h-4" />
-            </div>
-          </div>
-          <p className="text-3xl font-black text-slate-900">
-            {loading ? '...' : stats?.total_orders || 0}
-          </p>
-          <p className="text-xs text-emerald-600 mt-1 font-medium">
-            {stats?.confirmed_orders || 0} confirmed • {stats?.draft_orders || 0} drafts
-          </p>
-        </div>
+        <SummaryCard
+          label="Wholesale Orders"
+          value={loading ? '—' : stats?.total_orders ?? 0}
+          unit="orders"
+          subtitle={
+            loading
+              ? 'Loading orders...'
+              : `${stats?.confirmed_orders ?? 0} confirmed • ${stats?.draft_orders ?? 0} drafts`
+          }
+          icon={ShoppingCart}
+          iconClassName="bg-emerald-50 text-emerald-700 border border-emerald-200/70"
+        />
       </div>
 
-      {/* Prominent Quick Actions */}
-      <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white p-5 rounded-2xl shadow-sm space-y-3">
-        <div className="flex justify-between items-center">
+      {/* Quick Operations Bar */}
+      <section className="bg-white border border-stone-200 rounded-xl p-4 sm:p-5 shadow-2xs space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
           <div>
-            <h3 className="text-base font-bold">Quick Operations</h3>
-            <p className="text-xs text-slate-400">Direct shortcuts for daily wholesale workflow</p>
+            <h2 className="text-sm sm:text-base font-bold text-stone-900">Quick Operations</h2>
+            <p className="text-xs text-stone-500">
+              Direct shortcuts for daily wholesale orders, inventory intake, and QR scanning
+            </p>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-1">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
           <Button
             onClick={() => onNavigateTab('orders')}
-            className="bg-orange-600 hover:bg-orange-500 text-white font-semibold text-xs h-11 justify-start px-3 rounded-xl shadow-xs"
+            className="h-10 justify-start px-3.5 text-xs sm:text-sm"
           >
-            <Plus className="w-4 h-4 mr-2" />
-            New Order
+            <Plus className="w-4 h-4 shrink-0" />
+            <span>New Order</span>
           </Button>
 
           <Button
+            variant="outline"
             onClick={() => onNavigateTab('stock')}
-            className="bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs h-11 justify-start px-3 border border-slate-700 rounded-xl"
+            className="h-10 justify-start px-3.5 text-xs sm:text-sm"
           >
-            <Warehouse className="w-4 h-4 mr-2 text-blue-400" />
-            Intake Stock
+            <Warehouse className="w-4 h-4 text-sky-700 shrink-0" />
+            <span>Intake Stock</span>
           </Button>
 
           <Button
+            variant="outline"
             onClick={() => onNavigateTab('stock')}
-            className="bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs h-11 justify-start px-3 border border-slate-700 rounded-xl"
+            className="h-10 justify-start px-3.5 text-xs sm:text-sm"
           >
-            <ArrowRightLeft className="w-4 h-4 mr-2 text-emerald-400" />
-            Transfer Stock
+            <ArrowRightLeft className="w-4 h-4 text-emerald-700 shrink-0" />
+            <span>Transfer Stock</span>
           </Button>
 
           <Button
+            variant="outline"
             onClick={() => onNavigateTab('products')}
-            className="bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs h-11 justify-start px-3 border border-slate-700 rounded-xl"
+            className="h-10 justify-start px-3.5 text-xs sm:text-sm"
           >
-            <Package className="w-4 h-4 mr-2 text-amber-400" />
-            Add Design
+            <Package className="w-4 h-4 text-orange-700 shrink-0" />
+            <span>Add Design</span>
           </Button>
 
           <Button
+            variant="outline"
             onClick={() => onNavigateTab('shopscan')}
-            className="bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs h-11 justify-start px-3 border border-slate-700 rounded-xl"
+            className="h-10 justify-start px-3.5 text-xs sm:text-sm col-span-2 sm:col-span-1"
           >
-            <ScanLine className="w-4 h-4 mr-2 text-rose-400" />
-            Scan QR
+            <ScanLine className="w-4 h-4 text-stone-700 shrink-0" />
+            <span>Scan QR</span>
           </Button>
         </div>
-      </div>
+      </section>
 
-      {/* Two Column Layout: Recent Orders & Recent Stock Movements */}
+      {/* Two Column Operational Activity Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Orders */}
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-2xs space-y-4">
-          <div className="flex justify-between items-center">
-            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-              <ShoppingCart className="w-4 h-4 text-orange-600" />
-              Recent Wholesale Orders
+        {/* Recent Wholesale Orders */}
+        <section className="bg-white border border-stone-200 rounded-xl shadow-2xs overflow-hidden flex flex-col">
+          <div className="px-5 py-4 border-b border-stone-200 flex items-center justify-between gap-2">
+            <h3 className="font-bold text-stone-900 text-sm sm:text-base flex items-center gap-2">
+              <ShoppingCart className="w-4 h-4 text-orange-700" />
+              <span>Recent Wholesale Orders</span>
             </h3>
             <Button
               variant="ghost"
               size="sm"
               onClick={() => onNavigateTab('orders')}
-              className="text-xs text-orange-600 hover:text-orange-700"
+              className="text-xs text-orange-700 hover:text-orange-800 gap-1"
             >
-              View All <ArrowUpRight className="w-3.5 h-3.5 ml-1" />
+              <span>View All</span>
+              <ArrowUpRight className="w-3.5 h-3.5" />
             </Button>
           </div>
 
-          <div className="divide-y divide-slate-100">
+          <div className="divide-y divide-stone-100 flex-1">
             {recentOrders.length === 0 ? (
-              <p className="text-xs text-slate-400 py-6 text-center">No orders recorded yet.</p>
+              <EmptyState
+                icon={ShoppingCart}
+                title="No Orders Recorded"
+                description="Wholesale orders created by staff or owners will appear here."
+                className="py-10"
+              />
             ) : (
               recentOrders.map((ord) => (
-                <div key={ord.id} className="py-3 flex justify-between items-center">
-                  <div>
-                    <a
-                      href={`/order/${ord.order_no}`}
-                      className="font-mono text-xs font-bold text-orange-600 hover:underline"
-                    >
-                      {ord.order_no}
-                    </a>
-                    <p className="font-bold text-slate-900 text-sm mt-0.5">{ord.party_name}</p>
-                    <p className="text-[11px] text-slate-400">
-                      {ord.station ? `${ord.station} • ` : ''}
-                      {formatDate(ord.order_date || ord.created_at)}
+                <div
+                  key={ord.id}
+                  className="px-5 py-3.5 flex items-center justify-between gap-3 hover:bg-stone-50/70 transition-colors"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <a
+                        href={`/${activeSlug}/order/${encodeURIComponent(ord.order_no)}`}
+                        className="font-mono text-xs font-bold text-orange-700 hover:underline"
+                      >
+                        {ord.order_no}
+                      </a>
+                      <span className="text-xs text-stone-400">•</span>
+                      <span className="text-xs text-stone-500">
+                        {formatDate(ord.order_date || ord.created_at)}
+                      </span>
+                    </div>
+                    <p className="font-bold text-stone-900 text-sm truncate mt-0.5">
+                      {ord.party_name}
                     </p>
+                    {ord.station && (
+                      <p className="text-xs text-stone-500 truncate">Station: {ord.station}</p>
+                    )}
                   </div>
-                  <div className="text-right space-y-1">
-                    <p className="font-black text-slate-900 text-sm">
+
+                  <div className="text-right space-y-1 shrink-0">
+                    <p className="font-bold text-stone-900 text-sm tabular-nums">
                       {formatCurrency(ord.total_amount)}
                     </p>
-                    {ord.status === 'confirmed' ? (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                        <CheckCircle2 className="w-2.5 h-2.5" /> Confirmed
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                        <Clock className="w-2.5 h-2.5" /> Draft
-                      </span>
-                    )}
+                    <StatusBadge status={ord.status || 'draft'} />
                   </div>
                 </div>
               ))
             )}
           </div>
-        </div>
+        </section>
 
         {/* Recent Stock Movements */}
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-2xs space-y-4">
-          <div className="flex justify-between items-center">
-            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-              <ArrowRightLeft className="w-4 h-4 text-blue-600" />
-              Recent Stock Movements
+        <section className="bg-white border border-stone-200 rounded-xl shadow-2xs overflow-hidden flex flex-col">
+          <div className="px-5 py-4 border-b border-stone-200 flex items-center justify-between gap-2">
+            <h3 className="font-bold text-stone-900 text-sm sm:text-base flex items-center gap-2">
+              <ArrowRightLeft className="w-4 h-4 text-sky-700" />
+              <span>Recent Stock Movements</span>
             </h3>
             <Button
               variant="ghost"
               size="sm"
               onClick={() => onNavigateTab('stock')}
-              className="text-xs text-blue-600 hover:text-blue-700"
+              className="text-xs text-orange-700 hover:text-orange-800 gap-1"
             >
-              Stock Audit <ArrowUpRight className="w-3.5 h-3.5 ml-1" />
+              <span>Audit Log</span>
+              <ArrowUpRight className="w-3.5 h-3.5" />
             </Button>
           </div>
 
-          <div className="divide-y divide-slate-100">
+          <div className="divide-y divide-stone-100 flex-1">
             {recentMovements.length === 0 ? (
-              <p className="text-xs text-slate-400 py-6 text-center">No stock movements recorded yet.</p>
+              <EmptyState
+                icon={ArrowRightLeft}
+                title="No Stock Movements"
+                description="Godown inward intakes, location transfers, and order dispatches will appear here."
+                className="py-10"
+              />
             ) : (
               recentMovements.map((move) => (
-                <div key={move.id} className="py-3 flex justify-between items-center">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                        move.movement_type === 'INTAKE' ? 'bg-emerald-50 text-emerald-700' :
-                        move.movement_type === 'TRANSFER' ? 'bg-blue-50 text-blue-700' :
-                        'bg-orange-50 text-orange-700'
-                      }`}>
-                        {move.movement_type || 'TRANSFER'}
-                      </span>
-                      <span className="font-mono text-xs font-bold text-slate-800">
+                <div
+                  key={move.id}
+                  className="px-5 py-3.5 flex items-center justify-between gap-3 hover:bg-stone-50/70 transition-colors"
+                >
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusBadge status={move.movement_type || 'TRANSFER'} />
+                      <span className="font-mono text-xs font-bold text-stone-800">
                         {move.reference_no || `#${move.id}`}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-600 mt-1">
-                      {move.notes || 'Warehouse movement'}
+                    <p className="text-xs text-stone-600 truncate">
+                      {move.notes || 'Warehouse stock movement'}
                     </p>
-                    <p className="text-[11px] text-slate-400">
+                    <p className="text-xs text-stone-400">
                       {formatDateTime(move.created_at)} • by {move.staff_name || 'Staff'}
                     </p>
                   </div>
-                  <div className="text-right">
-                    <p className="font-black text-slate-900 text-sm">{move.sets} sets</p>
-                    <p className="text-xs font-mono text-slate-500">{move.total_pcs} pcs</p>
+
+                  <div className="text-right shrink-0">
+                    <p className="font-bold text-stone-900 text-sm tabular-nums">
+                      {move.sets} {move.sets === 1 ? 'set' : 'sets'}
+                    </p>
+                    <p className="text-xs font-mono text-stone-500 tabular-nums">
+                      {move.total_pcs} pcs
+                    </p>
                   </div>
                 </div>
               ))
             )}
           </div>
-        </div>
+        </section>
       </div>
     </div>
   )

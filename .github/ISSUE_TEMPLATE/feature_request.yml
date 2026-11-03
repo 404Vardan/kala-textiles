@@ -1,0 +1,49 @@
+name: Feature Request
+description: Propose an operational improvement or new workflow for Kala.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Suggest a feature or workflow improvement for **Kala — Textile Wholesale Management System**.
+
+  - type: dropdown
+    id: role
+    attributes:
+      label: Primary User Role
+      description: Who benefits most from this feature?
+      options:
+        - Wholesale Buyer (Public QR Catalog & Order Requests)
+        - Shop Floor Staff (Mobile QR Scanner & Order Drafting)
+        - Business Owner / Admin (Catalog, Godown/Shop Stock, Orders, Parties)
+        - Multi-Tenant Security / Database Architecture
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Operational Problem / Need
+      description: What wholesale or inventory bottleneck does this solve?
+      placeholder: Describe the operational scenario...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Solution
+      description: How should this feature work in the UI and database?
+      placeholder: Describe the desired workflow...
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional Context
+      description: Any sample documents, thermal label specs, or edge cases to consider.
+    validations:
+      required: false
+

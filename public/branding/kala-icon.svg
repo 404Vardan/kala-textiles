@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Kala Icon">
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="#C2410C" />
+  <rect x="6" y="6" width="52" height="52" rx="10" fill="none" stroke="#F8F7F4" stroke-width="1.25" stroke-opacity="0.28" />
+  <!-- Subtle woven corner ticks -->
+  <line x1="12" y1="6" x2="12" y2="12" stroke="#F8F7F4" stroke-width="1.25" stroke-opacity="0.35" />
+  <line x1="52" y1="6" x2="52" y2="12" stroke="#F8F7F4" stroke-width="1.25" stroke-opacity="0.35" />
+  <line x1="12" y1="52" x2="12" y2="58" stroke="#F8F7F4" stroke-width="1.25" stroke-opacity="0.35" />
+  <line x1="52" y1="52" x2="52" y2="58" stroke="#F8F7F4" stroke-width="1.25" stroke-opacity="0.35" />
+  <!-- Geometric K monogram with loom shuttle diagonal -->
+  <path d="M19 16 H26 V48 H19 Z" fill="#FFFFFF" />
+  <path d="M27 31 L41 16 H49 L34 31.5 L49 48 H40.5 L27 33 Z" fill="#FFFFFF" />
+  <rect x="19" y="30" width="9" height="4" rx="1" fill="#FDBA74" />
+</svg>
+

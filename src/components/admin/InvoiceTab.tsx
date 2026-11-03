@@ -20,10 +20,13 @@ import {
 import { fetchInvoices, createInvoice, deleteInvoice, updateInvoice, deleteInvoiceItemsByInvoiceId, fetchInvoiceItems } from '@/services/invoices'
 import { createInvoiceItemBatch } from '@/services/invoices'
 import { fetchProducts } from '@/services/products'
+import { useAuth } from '@/contexts/AuthContext'
+import { resolveBrandName } from '@/components/common/KalaLogo'
+import { downloadInvoicePdf, printInvoicePdf } from '@/utils/invoicePdfGenerator'
 import type { Invoice, Product } from '@/types'
 import { formatCurrency, formatDate } from '@/utils/formatters'
 import { generateQRCodeForInvoice } from '@/utils/qrcode'
-import { Plus, Trash2, Eye, Search, X, Edit2 } from 'lucide-react'
+import { Plus, Trash2, Eye, Search, X, Edit2, Download, Printer } from 'lucide-react'
 
 interface InvoiceItemDraft {
   design_no: string
@@ -35,6 +38,10 @@ interface InvoiceItemDraft {
 }
 
 export default function InvoiceTab() {
+  const { business } = useAuth()
+  const activeSlug = (business?.slug || 'rangoli').trim().toLowerCase() || 'rangoli'
+  const displayBrand = resolveBrandName(business?.name)
+
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
@@ -163,7 +170,7 @@ export default function InvoiceTab() {
     setCreateLoading(true)
     try {
       const domain = import.meta.env.VITE_PUBLISHED_DOMAIN || window.location.origin
-      const qrDataUrl = await generateQRCodeForInvoice(invoiceNo, domain)
+      const qrDataUrl = await generateQRCodeForInvoice(invoiceNo, activeSlug, domain)
 
       if (editingInvoice) {
         await updateInvoice(editingInvoice.id, {
@@ -232,7 +239,25 @@ export default function InvoiceTab() {
 
   const handleViewInvoice = (invoice: Invoice) => {
     const domain = import.meta.env.VITE_PUBLISHED_DOMAIN || window.location.origin
-    window.open(`${domain}/invoice/${invoice.invoice_no}`, '_blank')
+    window.open(`${domain}/${activeSlug}/invoice/${encodeURIComponent(invoice.invoice_no)}`, '_blank')
+  }
+
+  const handleDownloadInvoicePdf = async (invoice: Invoice) => {
+    try {
+      const invoiceItems = await fetchInvoiceItems(invoice.id)
+      await downloadInvoicePdf({ invoice, items: invoiceItems, businessName: displayBrand })
+    } catch (err: any) {
+      alert(`Could not generate PDF: ${err?.message || 'Error'}`)
+    }
+  }
+
+  const handlePrintInvoicePdf = async (invoice: Invoice) => {
+    try {
+      const invoiceItems = await fetchInvoiceItems(invoice.id)
+      await printInvoicePdf({ invoice, items: invoiceItems, businessName: displayBrand })
+    } catch (err: any) {
+      alert(`Could not print PDF: ${err?.message || 'Error'}`)
+    }
   }
 
   if (loading) {
@@ -273,13 +298,44 @@ export default function InvoiceTab() {
                   <td className="px-4 py-3 font-medium">{formatCurrency(invoice.total_amount)}</td>
                   <td className="px-4 py-3">
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => handleViewInvoice(invoice)}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="View Invoice"
+                        onClick={() => handleViewInvoice(invoice)}
+                      >
                         <Eye className="w-4 h-4" />
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => openEditForm(invoice)}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Download Invoice PDF"
+                        onClick={() => handleDownloadInvoicePdf(invoice)}
+                      >
+                        <Download className="w-4 h-4 text-orange-700" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Print Invoice"
+                        onClick={() => handlePrintInvoicePdf(invoice)}
+                      >
+                        <Printer className="w-4 h-4 text-stone-700" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Edit Invoice"
+                        onClick={() => openEditForm(invoice)}
+                      >
                         <Edit2 className="w-4 h-4 text-blue-500" />
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setDeleteConfirm(invoice.id)}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Delete Invoice"
+                        onClick={() => setDeleteConfirm(invoice.id)}
+                      >
                         <Trash2 className="w-4 h-4 text-red-500" />
                       </Button>
                     </div>
