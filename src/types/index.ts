@@ -138,6 +138,91 @@ export interface PublicOrder {
   }>
 }
 
+// Buyer Order Request types
+export type OrderRequestStatus = 'requested' | 'converted' | 'rejected'
+
+export interface OrderRequestCartItem {
+  design_no: string
+  sets: number
+}
+
+export interface OrderRequestItem {
+  request_id: number
+  product_id: number
+  sets: number
+  product?: {
+    id: number
+    design_no: string
+    brand?: string | null
+    collection_name?: string | null
+    fabric?: string | null
+    rate?: number | null
+    pcs_per_set?: number | null
+    image_url?: string | null
+    is_active?: boolean | null
+  } | null
+}
+
+export interface OrderRequest {
+  id: number
+  business_id: number
+  party_name: string
+  phone: string
+  status: OrderRequestStatus
+  note?: string | null
+  created_at: string
+  items: OrderRequestItem[]
+}
+
+export interface ConvertOrderRequestResult {
+  success: boolean
+  request_id: number
+  order_id: number
+  order_no: string
+  status: OrderStatus
+}
+
+export interface RejectOrderRequestResult {
+  success: boolean
+  request_id: number
+  status: OrderRequestStatus
+}
+
+export interface PublicBusinessSettings {
+  business_name: string
+  business_slug: string
+  whatsapp_number: string | null
+}
+
+// Shared Staff Order Draft types
+export interface StaffOrderItemDraft {
+  product_id: number
+  design_no: string
+  rate: number
+  sets: number
+  pcs_per_set: number
+  total_pcs: number
+  line_total: number
+  brand?: string
+}
+
+export interface StaffOrderHeaderDraft {
+  partyName: string
+  station: string
+  agent: string
+  gstNumber: string
+  orderDate: string
+  exportDate: string
+  brand: string
+  productName: string
+  notes: string
+}
+
+export interface StaffOrderDraft extends StaffOrderHeaderDraft {
+  items: StaffOrderItemDraft[]
+  updatedAt: string
+}
+
 // Invoice types (legacy support)
 export interface Invoice {
   id: number

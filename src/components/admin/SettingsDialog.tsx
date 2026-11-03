@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -8,7 +8,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { fetchAdminSettings, updateWhatsappNumber, updateUserPassword } from '@/services/adminSettings'
+import { fetchAdminSettings, updateBusinessWhatsappNumber, updateUserPassword } from '@/services/adminSettings'
 
 interface SettingsDialogProps {
   open: boolean
@@ -20,8 +20,33 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [whatsapp, setWhatsapp] = useState('')
   const [loading, setLoading] = useState(false)
+  const [loadingSettings, setLoadingSettings] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!open) return
+    let active = true
+    setError('')
+    setMessage('')
+    setLoadingSettings(true)
+
+    fetchAdminSettings()
+      .then((settings) => {
+        if (!active) return
+        setWhatsapp(settings.whatsapp_number || '')
+      })
+      .catch(() => {
+        // Non-blocking if settings haven't been initialized yet
+      })
+      .finally(() => {
+        if (active) setLoadingSettings(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [open])
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -58,11 +83,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     setLoading(true)
 
     try {
-      const settings = await fetchAdminSettings()
-      await updateWhatsappNumber(settings.id, whatsapp)
+      const saved = await updateBusinessWhatsappNumber(whatsapp)
+      setWhatsapp(saved || '')
       setMessage('Business WhatsApp contact updated.')
-    } catch {
-      setError('Failed to update WhatsApp number')
+    } catch (err: any) {
+      setError(err?.message || 'Failed to update WhatsApp number')
     } finally {
       setLoading(false)
     }
@@ -115,16 +140,22 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           <div className="space-y-3">
             <div>
               <h3 className="font-semibold text-sm text-gray-800">Business WhatsApp Contact</h3>
-              <p className="text-xs text-gray-500">Used for customer order confirmation and quick sharing.</p>
+              <p className="text-xs text-gray-500">
+                Used on customer QR order review screens for direct WhatsApp order sharing.
+              </p>
             </div>
             <div className="flex gap-2">
               <Input
-                placeholder="+91..."
+                placeholder={loadingSettings ? 'Loading...' : '+91 98765 43210'}
                 value={whatsapp}
                 onChange={(e) => setWhatsapp(e.target.value)}
-                disabled={loading}
+                disabled={loading || loadingSettings}
               />
-              <Button onClick={handleUpdateWhatsapp} size="sm" disabled={loading || !whatsapp}>
+              <Button
+                onClick={handleUpdateWhatsapp}
+                size="sm"
+                disabled={loading || loadingSettings || !whatsapp.trim()}
+              >
                 Save
               </Button>
             </div>
@@ -137,4 +168,3 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     </Dialog>
   )
 }
-

@@ -11,38 +11,47 @@ import {
 import { fetchProducts } from '@/services/products'
 import type { Product } from '@/types'
 import { useQRScanner } from '@/hooks/useQRScanner'
+import { parseProductQRUrl } from '@/utils/qrcode'
+import { useAuth } from '@/contexts/AuthContext'
 import { QrCode, ShoppingCart, Shield, Search, X, Camera, Zap } from 'lucide-react'
 
 export default function LandingPage() {
   const navigate = useNavigate()
+  const { user, business } = useAuth()
   const [showScanner, setShowScanner] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [products, setProducts] = useState<Product[]>([])
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([])
 
+  const activeSlug = business?.slug || 'rangoli'
+
   useEffect(() => {
-    // Preload products for search
-    fetchProducts(500).then(setProducts).catch(console.error)
-  }, [])
+    // Preload products for search when authenticated
+    if (!user) return
+    fetchProducts(500).then(setProducts).catch(() => {})
+  }, [user])
 
   useEffect(() => {
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
-      setFilteredProducts(products.filter(p => p.design_no.toLowerCase().includes(q)))
+      setFilteredProducts(products.filter((p) => p.design_no.toLowerCase().includes(q)))
     } else {
       setFilteredProducts(products.slice(0, 20))
     }
   }, [searchQuery, products])
 
   // Ultra-fast QR scanner via native BarcodeDetector API
-  const handleQRScan = useCallback((text: string) => {
-    const match = text.match(/\/p\/([^/?#]+)/)
-    if (match) {
-      setShowScanner(false)
-      navigate(`/p/${match[1]}`)
-    }
-  }, [navigate])
+  const handleQRScan = useCallback(
+    (text: string) => {
+      const parsed = parseProductQRUrl(text, activeSlug)
+      if (parsed) {
+        setShowScanner(false)
+        navigate(`/${parsed.slug}/p/${encodeURIComponent(parsed.designNo)}`)
+      }
+    },
+    [navigate, activeSlug]
+  )
 
   const { status: scannerStatus } = useQRScanner({
     elementId: 'qr-reader',
@@ -68,9 +77,11 @@ export default function LandingPage() {
   }
 
   const handleSelectDesign = (designNo: string) => {
+    const clean = designNo.trim()
+    if (!clean) return
     setShowSearch(false)
     setSearchQuery('')
-    navigate(`/p/${designNo}`)
+    navigate(`/${activeSlug}/p/${encodeURIComponent(clean)}`)
   }
 
   return (
@@ -138,7 +149,15 @@ export default function LandingPage() {
       {/* Search Dialog (cmdk-style) */}
       <Dialog open={showSearch} onOpenChange={setShowSearch}>
         <DialogContent className="sm:max-w-md p-0 gap-0 overflow-hidden">
-          <div className="flex items-center gap-2 px-4 border-b">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (searchQuery.trim()) {
+                handleSelectDesign(searchQuery.trim())
+              }
+            }}
+            className="flex items-center gap-2 px-4 border-b"
+          >
             <Search className="w-5 h-5 text-gray-400 shrink-0" />
             <Input
               placeholder="Type design number..."
@@ -148,16 +167,35 @@ export default function LandingPage() {
               autoFocus
             />
             {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="shrink-0">
+              <button type="button" onClick={() => setSearchQuery('')} className="shrink-0">
                 <X className="w-4 h-4 text-gray-400" />
               </button>
             )}
-          </div>
+          </form>
           <div className="max-h-72 overflow-y-auto">
+            {searchQuery.trim() && (
+              <button
+                type="button"
+                onClick={() => handleSelectDesign(searchQuery.trim())}
+                className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-orange-50/60 hover:bg-orange-100/70 border-b transition-colors text-left"
+              >
+                <div className="flex items-center gap-3">
+                  <QrCode className="w-4 h-4 text-orange-600 shrink-0" />
+                  <span className="font-semibold text-orange-800">
+                    Open design "{searchQuery.trim()}"
+                  </span>
+                </div>
+                <span className="text-xs font-medium text-orange-600">View →</span>
+              </button>
+            )}
             {filteredProducts.length === 0 ? (
-              <div className="py-8 text-center text-gray-400 text-sm">No designs found</div>
+              !searchQuery.trim() && (
+                <div className="py-8 text-center text-gray-400 text-sm">
+                  Type a design number above to view its catalog page
+                </div>
+              )
             ) : (
-              filteredProducts.map(product => (
+              filteredProducts.map((product) => (
                 <button
                   key={product.id}
                   onClick={() => handleSelectDesign(product.design_no)}
@@ -167,7 +205,9 @@ export default function LandingPage() {
                   <div>
                     <p className="font-medium text-gray-900">{product.design_no}</p>
                     <p className="text-xs text-gray-500">
-                      {[product.brand, product.collection_name, product.fabric].filter(Boolean).join(' • ') || 'No details'}
+                      {[product.brand, product.collection_name, product.fabric]
+                        .filter(Boolean)
+                        .join(' • ') || 'No details'}
                     </p>
                   </div>
                 </button>
@@ -178,7 +218,12 @@ export default function LandingPage() {
       </Dialog>
 
       {/* QR Scanner Dialog */}
-      <Dialog open={showScanner} onOpenChange={(open) => { if (!open) handleCloseScanner() }}>
+      <Dialog
+        open={showScanner}
+        onOpenChange={(open) => {
+          if (!open) handleCloseScanner()
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -29,11 +30,15 @@ import {
   duplicateOrder,
   updateOrderStatus,
 } from '@/services/orders'
-import { fetchProducts } from '@/services/products'
+import { fetchProducts, fetchProduct } from '@/services/products'
 import { fetchParties, findOrCreateParty } from '@/services/parties'
 import { fetchAgents, findOrCreateAgent } from '@/services/agents'
 import { fetchLocations, confirmOrderAndDeductStock } from '@/services/inventory'
 import { useQRScanner } from '@/hooks/useQRScanner'
+import { parseProductQRUrl } from '@/utils/qrcode'
+import { useAuth } from '@/contexts/AuthContext'
+import { useStaffOrderDraft } from '@/contexts/StaffOrderDraftContext'
+import OrderRequestsSection from './OrderRequestsSection'
 import type { Order, Product, Party, Agent, InventoryLocation, OrderStatus } from '@/types'
 import { formatCurrency, formatDate } from '@/utils/formatters'
 import { downloadOrderPdf } from '@/utils/orderPdfGenerator'
@@ -49,6 +54,7 @@ import {
   AlertCircle,
   Camera,
   Ban,
+  ClipboardList,
 } from 'lucide-react'
 
 interface OrderItemDraft {
@@ -64,9 +70,29 @@ interface OrderItemDraft {
 
 interface OrderTabProps {
   isStaff?: boolean
+  autoOpenDraft?: boolean
+  onAutoOpenDraftHandled?: () => void
 }
 
-export default function OrderTab({ isStaff = false }: OrderTabProps) {
+export default function OrderTab({
+  isStaff = false,
+  autoOpenDraft = false,
+  onAutoOpenDraftHandled,
+}: OrderTabProps) {
+  const { business } = useAuth()
+  const activeSlug = (business?.slug || 'rangoli').trim().toLowerCase() || 'rangoli'
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  const {
+    draft: sharedDraft,
+    totalDesigns: sharedDraftDesigns,
+    totalSets: sharedDraftSets,
+    updateHeader: updateSharedHeader,
+    setItems: setSharedItems,
+    addProductToDraft: addProductToSharedDraft,
+    clearDraft: clearSharedDraft,
+  } = useStaffOrderDraft()
+
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -87,7 +113,7 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
   const [agents, setAgents] = useState<Agent[]>([])
   const [locations, setLocations] = useState<InventoryLocation[]>([])
 
-  // Form fields
+  // Form fields (when editingOrder is null, synchronized with sharedDraft)
   const [partyName, setPartyName] = useState('')
   const [station, setStation] = useState('')
   const [agent, setAgent] = useState('')
@@ -117,6 +143,55 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
     loadAuxiliaryData()
   }, [])
 
+  // Keep New Order modal state synchronized with shared staff draft when not editing an existing DB order
+  useEffect(() => {
+    if (editingOrder) return
+    setPartyName(sharedDraft.partyName)
+    setStation(sharedDraft.station)
+    setAgent(sharedDraft.agent)
+    setGstNumber(sharedDraft.gstNumber)
+    setOrderDate(sharedDraft.orderDate || new Date().toISOString().split('T')[0])
+    setExportDate(sharedDraft.exportDate)
+    setBrand(sharedDraft.brand)
+    setProductName(sharedDraft.productName)
+    setNotes(sharedDraft.notes)
+    setItems(
+      sharedDraft.items.map((item) => {
+        const prod = products.find(
+          (p) =>
+            p.id === item.product_id ||
+            p.design_no.toLowerCase() === item.design_no.toLowerCase()
+        )
+        return {
+          design_no: item.design_no,
+          rate: item.rate,
+          sets: item.sets,
+          pcs_per_set: item.pcs_per_set,
+          total_pcs: item.total_pcs,
+          line_total: item.line_total,
+          product_id: item.product_id,
+          thumbnail: prod?.image_url || undefined,
+        }
+      })
+    )
+  }, [sharedDraft, editingOrder, products])
+
+  // Auto-open draft order form when navigated with ?openDraft=1 or autoOpenDraft prop
+  useEffect(() => {
+    const openDraftParam = searchParams.get('openDraft')
+    if (openDraftParam === '1' || autoOpenDraft) {
+      setEditingOrder(null)
+      setFormError('')
+      setShowForm(true)
+      if (openDraftParam === '1') {
+        const nextParams = new URLSearchParams(searchParams)
+        nextParams.delete('openDraft')
+        setSearchParams(nextParams, { replace: true })
+      }
+      onAutoOpenDraftHandled?.()
+    }
+  }, [searchParams, autoOpenDraft, setSearchParams, onAutoOpenDraftHandled])
+
   const loadOrders = async () => {
     try {
       setLoading(true)
@@ -143,7 +218,7 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
       setLocations(locs)
 
       // Default stock deduction to Shop location
-      const shopLoc = locs.find(l => l.name.toLowerCase() === 'shop')
+      const shopLoc = locs.find((l) => l.name.toLowerCase() === 'shop')
       if (shopLoc) setDeductLocationId(String(shopLoc.id))
       else if (locs.length > 0) setDeductLocationId(String(locs[0].id))
     } catch (err) {
@@ -151,12 +226,35 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
     }
   }
 
+  const syncNewOrderItemsToShared = useCallback(
+    (nextItems: OrderItemDraft[]) => {
+      setItems(nextItems)
+      if (!editingOrder) {
+        setSharedItems(
+          nextItems
+            .filter((i) => Number(i.product_id) > 0 || i.design_no.trim() !== '')
+            .map((i) => ({
+              product_id: Number(i.product_id) || 0,
+              design_no: i.design_no,
+              rate: i.rate,
+              sets: Math.max(1, Math.min(500, Math.floor(Number(i.sets) || 1))),
+              pcs_per_set: Math.max(1, Math.floor(Number(i.pcs_per_set) || 1)),
+              total_pcs: i.total_pcs,
+              line_total: i.line_total,
+            }))
+        )
+      }
+    },
+    [editingOrder, setSharedItems]
+  )
+
   // Handle party name typing & autocomplete
   const handlePartyChange = (value: string) => {
     setPartyName(value)
+    if (!editingOrder) updateSharedHeader({ partyName: value })
     if (value.trim().length > 1) {
       const q = value.toLowerCase()
-      const matches = parties.filter(p => p.name.toLowerCase().includes(q)).slice(0, 5)
+      const matches = parties.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 5)
       setPartySuggestions(matches)
       setShowPartySuggestions(matches.length > 0)
     } else {
@@ -166,17 +264,27 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
 
   const selectParty = (party: Party) => {
     setPartyName(party.name)
+    const nextStation = party.station || station
+    const nextGst = party.gst_number || gstNumber
     if (party.station) setStation(party.station)
     if (party.gst_number) setGstNumber(party.gst_number)
+    if (!editingOrder) {
+      updateSharedHeader({
+        partyName: party.name,
+        station: nextStation,
+        gstNumber: nextGst,
+      })
+    }
     setShowPartySuggestions(false)
   }
 
   // Handle agent typing & autocomplete
   const handleAgentChange = (value: string) => {
     setAgent(value)
+    if (!editingOrder) updateSharedHeader({ agent: value })
     if (value.trim().length > 1) {
       const q = value.toLowerCase()
-      const matches = agents.filter(a => a.name.toLowerCase().includes(q)).slice(0, 5)
+      const matches = agents.filter((a) => a.name.toLowerCase().includes(q)).slice(0, 5)
       setAgentSuggestions(matches)
       setShowAgentSuggestions(matches.length > 0)
     } else {
@@ -186,6 +294,7 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
 
   const selectAgent = (agentRecord: Agent) => {
     setAgent(agentRecord.name)
+    if (!editingOrder) updateSharedHeader({ agent: agentRecord.name })
     setShowAgentSuggestions(false)
   }
 
@@ -196,7 +305,11 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
       const q = query.toLowerCase()
       setSearchResults(
         products
-          .filter(p => p.design_no.toLowerCase().includes(q) || (p.brand && p.brand.toLowerCase().includes(q)))
+          .filter(
+            (p) =>
+              p.design_no.toLowerCase().includes(q) ||
+              (p.brand && p.brand.toLowerCase().includes(q))
+          )
           .slice(0, 8)
       )
     } else {
@@ -204,55 +317,86 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
     }
   }
 
-  const addItemFromProduct = useCallback((product: Product) => {
-    setItems(prev => {
-      const existingIndex = prev.findIndex(i => i.design_no.toLowerCase() === product.design_no.toLowerCase())
-      if (existingIndex !== -1) {
-        const updated = [...prev]
-        const item = { ...updated[existingIndex] }
-        item.sets += 1
-        item.total_pcs = item.sets * item.pcs_per_set
-        item.line_total = item.rate * item.total_pcs
-        updated[existingIndex] = item
-        return updated
+  const addItemFromProduct = useCallback(
+    (product: Product) => {
+      if (!editingOrder) {
+        addProductToSharedDraft(product, 1)
+      } else {
+        setItems((prev) => {
+          const existingIndex = prev.findIndex(
+            (i) => i.design_no.toLowerCase() === product.design_no.toLowerCase()
+          )
+          if (existingIndex !== -1) {
+            const updated = [...prev]
+            const item = { ...updated[existingIndex] }
+            item.sets = Math.min(500, item.sets + 1)
+            item.total_pcs = item.sets * item.pcs_per_set
+            item.line_total = item.rate * item.total_pcs
+            updated[existingIndex] = item
+            return updated
+          }
+
+          const pcsPerSet = product.pcs_per_set || 1
+          const rate = product.rate || 0
+          return [
+            ...prev,
+            {
+              design_no: product.design_no,
+              rate: rate,
+              sets: 1,
+              pcs_per_set: pcsPerSet,
+              total_pcs: pcsPerSet,
+              line_total: rate * pcsPerSet,
+              product_id: product.id,
+              thumbnail: product.image_url || undefined,
+            },
+          ]
+        })
+      }
+      setItemSearch('')
+      setSearchResults([])
+    },
+    [editingOrder, addProductToSharedDraft]
+  )
+
+  // QR Scanner hook with shared parser & tenant validation
+  const handleQRScan = useCallback(
+    async (text: string) => {
+      const parsed = parseProductQRUrl(text, activeSlug)
+      if (!parsed) {
+        setFormError('Invalid product QR code. Order or invoice QR codes cannot be scanned here.')
+        return
       }
 
-      const pcsPerSet = product.pcs_per_set || 1
-      const rate = product.rate || 0
-      return [
-        ...prev,
-        {
-          design_no: product.design_no,
-          rate: rate,
-          sets: 1,
-          pcs_per_set: pcsPerSet,
-          total_pcs: pcsPerSet,
-          line_total: rate * pcsPerSet,
-          product_id: product.id,
-          thumbnail: product.image_url || undefined,
-        },
-      ]
-    })
-    setItemSearch('')
-    setSearchResults([])
-  }, [])
-
-  // QR Scanner hook
-  const handleQRScan = useCallback(
-    (text: string) => {
-      const match = text.match(/\/p\/([^/?#]+)/)
-      const scannedCode = match ? match[1] : text.trim()
-
-      if (scannedCode) {
-        const product = products.find(
-          p => p.design_no.toLowerCase() === scannedCode.toLowerCase()
+      if (!parsed.isLegacy && parsed.slug !== activeSlug) {
+        setFormError(
+          `Scanned QR belongs to business "${parsed.slug}", not "${activeSlug}".`
         )
-        if (product) {
-          addItemFromProduct(product)
+        return
+      }
+
+      const scannedCode = parsed.designNo
+      if (!scannedCode) return
+
+      setFormError('')
+      const localMatch = products.find(
+        (p) => p.design_no.toLowerCase() === scannedCode.toLowerCase()
+      )
+      if (localMatch) {
+        addItemFromProduct(localMatch)
+        return
+      }
+
+      try {
+        const fetched = await fetchProduct(scannedCode)
+        if (fetched) {
+          addItemFromProduct(fetched)
         }
+      } catch {
+        setFormError(`Scanned design "${scannedCode}" was not found in active catalog.`)
       }
     },
-    [products, addItemFromProduct]
+    [activeSlug, products, addItemFromProduct]
   )
 
   useQRScanner({
@@ -267,31 +411,33 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
     const item = { ...updated[index] }
 
     if (field === 'sets') {
-      item.sets = Math.max(0, value)
+      item.sets = Math.max(1, Math.min(500, Math.floor(value || 1)))
       item.total_pcs = item.sets * item.pcs_per_set
       item.line_total = item.rate * item.total_pcs
     } else if (field === 'rate') {
       item.rate = Math.max(0, value)
       item.line_total = item.rate * item.total_pcs
     } else if (field === 'pcs_per_set') {
-      item.pcs_per_set = Math.max(1, value)
+      item.pcs_per_set = Math.max(1, Math.floor(value || 1))
       item.total_pcs = item.sets * item.pcs_per_set
       item.line_total = item.rate * item.total_pcs
     }
 
     updated[index] = item
-    setItems(updated)
+    syncNewOrderItemsToShared(updated)
   }
 
   const removeItem = (index: number) => {
-    setItems(items.filter((_, i) => i !== index))
+    const updated = items.filter((_, i) => i !== index)
+    syncNewOrderItemsToShared(updated)
   }
 
   const totalSets = items.reduce((sum, i) => sum + (i.sets || 0), 0)
   const totalPieces = items.reduce((sum, i) => sum + (i.total_pcs || 0), 0)
   const totalAmount = items.reduce((sum, i) => sum + i.line_total, 0)
 
-  const resetForm = () => {
+  const discardSharedDraftAndReset = () => {
+    clearSharedDraft()
     setPartyName('')
     setStation('')
     setAgent('')
@@ -308,7 +454,9 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
   }
 
   const openCreateForm = () => {
-    resetForm()
+    setEditingOrder(null)
+    setShowScanner(false)
+    setFormError('')
     setShowForm(true)
   }
 
@@ -327,8 +475,8 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
 
     try {
       const orderItems = await fetchOrderItems(ord.id)
-      const drafts: OrderItemDraft[] = orderItems.map(item => {
-        const prod = products.find(p => p.design_no === item.design_no)
+      const drafts: OrderItemDraft[] = orderItems.map((item) => {
+        const prod = products.find((p) => p.design_no === item.design_no)
         return {
           design_no: item.design_no || '',
           rate: item.rate || 0,
@@ -393,7 +541,7 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
         await deleteOrderItemsByOrderId(editingOrder.id)
         if (items.length > 0) {
           await createOrderItemBatch(
-            items.map(i => ({
+            items.map((i) => ({
               order_id: editingOrder.id,
               product_id: i.product_id,
               design_no: i.design_no,
@@ -422,7 +570,7 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
             status: 'draft',
             total_amount: totalAmount,
           },
-          items.map(i => ({
+          items.map((i) => ({
             product_id: i.product_id,
             design_no: i.design_no,
             rate: i.rate,
@@ -433,10 +581,13 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
             order_id: 0,
           }))
         )
+        // Clear shared staff draft once saved to the database
+        clearSharedDraft()
       }
 
       setShowForm(false)
-      resetForm()
+      setEditingOrder(null)
+      setShowScanner(false)
       await loadOrders()
     } catch (err: any) {
       setFormError(err?.message || 'Failed to save order')
@@ -456,7 +607,9 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
         parseInt(deductLocationId, 10),
         confirmStaffName.trim() || 'Staff'
       )
-      setOrders(orders.map(o => (o.id === confirmModalOrder.id ? { ...o, status: 'confirmed' } : o)))
+      setOrders(
+        orders.map((o) => (o.id === confirmModalOrder.id ? { ...o, status: 'confirmed' } : o))
+      )
       setConfirmModalOrder(null)
       alert(`Order ${confirmModalOrder.order_no} confirmed! Stock inventory has been deducted.`)
     } catch (err: any) {
@@ -469,7 +622,7 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
   const handleCancelOrder = async (orderId: number) => {
     try {
       await updateOrderStatus(orderId, 'cancelled')
-      setOrders(orders.map(o => (o.id === orderId ? { ...o, status: 'cancelled' } : o)))
+      setOrders(orders.map((o) => (o.id === orderId ? { ...o, status: 'cancelled' } : o)))
     } catch (err: any) {
       alert(`Failed to cancel: ${err?.message || 'Error'}`)
     }
@@ -479,7 +632,7 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
     if (!deleteConfirm) return
     try {
       await deleteOrder(deleteConfirm)
-      setOrders(orders.filter(o => o.id !== deleteConfirm))
+      setOrders(orders.filter((o) => o.id !== deleteConfirm))
       setDeleteConfirm(null)
     } catch (err: any) {
       alert(`Error deleting order: ${err?.message || 'Error'}`)
@@ -490,8 +643,8 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
     try {
       const ordItems = await fetchOrderItems(ord.id)
       const withProducts = await Promise.all(
-        ordItems.map(async item => {
-          const prod = products.find(p => p.design_no === item.design_no)
+        ordItems.map(async (item) => {
+          const prod = products.find((p) => p.design_no === item.design_no)
           return { ...item, product: prod }
         })
       )
@@ -502,7 +655,7 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
   }
 
   // Filtered orders list
-  const filteredOrders = orders.filter(o => {
+  const filteredOrders = orders.filter((o) => {
     if (statusFilter !== 'all' && o.status !== statusFilter) return false
     if (!searchQuery.trim()) return true
     const q = searchQuery.toLowerCase()
@@ -517,6 +670,16 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
 
   return (
     <div className="space-y-6">
+      {/* Owner-only Buyer QR Order Requests Section */}
+      {!isStaff && (
+        <OrderRequestsSection
+          onOrderConverted={async () => {
+            await loadOrders()
+            await loadAuxiliaryData()
+          }}
+        />
+      )}
+
       {/* Top action and filter bar */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-4">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
@@ -529,18 +692,40 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
               className="pl-9 bg-slate-50 border-slate-200"
             />
           </div>
-          <Button onClick={openCreateForm} className="bg-slate-900 hover:bg-slate-800 text-white shrink-0">
-            <Plus className="w-4 h-4 mr-1.5" /> Create New Order
-          </Button>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {sharedDraftDesigns > 0 && (
+              <Button
+                type="button"
+                onClick={openCreateForm}
+                className="bg-orange-600 hover:bg-orange-700 text-white shrink-0 gap-1.5"
+              >
+                <ClipboardList className="w-4 h-4" />
+                <span>
+                  Resume Draft ({sharedDraftDesigns}{' '}
+                  {sharedDraftDesigns === 1 ? 'Design' : 'Designs'} · {sharedDraftSets}{' '}
+                  {sharedDraftSets === 1 ? 'Set' : 'Sets'})
+                </span>
+              </Button>
+            )}
+            <Button
+              onClick={openCreateForm}
+              className="bg-slate-900 hover:bg-slate-800 text-white shrink-0"
+            >
+              <Plus className="w-4 h-4 mr-1.5" /> Create New Order
+            </Button>
+          </div>
         </div>
 
         {/* Status filters */}
-        <div className="flex items-center gap-2 pt-2 border-t border-slate-100 text-xs">
+        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 text-xs">
           <span className="font-semibold text-slate-500 uppercase tracking-wider">Status:</span>
           <button
             onClick={() => setStatusFilter('all')}
             className={`px-3 py-1 rounded-full font-medium transition-colors ${
-              statusFilter === 'all' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              statusFilter === 'all'
+                ? 'bg-slate-900 text-white'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
             All Orders ({orders.length})
@@ -548,26 +733,32 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
           <button
             onClick={() => setStatusFilter('draft')}
             className={`px-3 py-1 rounded-full font-medium transition-colors ${
-              statusFilter === 'draft' ? 'bg-amber-600 text-white' : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+              statusFilter === 'draft'
+                ? 'bg-amber-600 text-white'
+                : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
             }`}
           >
-            Drafts ({orders.filter(o => !o.status || o.status === 'draft').length})
+            Drafts ({orders.filter((o) => !o.status || o.status === 'draft').length})
           </button>
           <button
             onClick={() => setStatusFilter('confirmed')}
             className={`px-3 py-1 rounded-full font-medium transition-colors ${
-              statusFilter === 'confirmed' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+              statusFilter === 'confirmed'
+                ? 'bg-emerald-600 text-white'
+                : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
             }`}
           >
-            Confirmed ({orders.filter(o => o.status === 'confirmed').length})
+            Confirmed ({orders.filter((o) => o.status === 'confirmed').length})
           </button>
           <button
             onClick={() => setStatusFilter('cancelled')}
             className={`px-3 py-1 rounded-full font-medium transition-colors ${
-              statusFilter === 'cancelled' ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+              statusFilter === 'cancelled'
+                ? 'bg-rose-600 text-white'
+                : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
             }`}
           >
-            Cancelled ({orders.filter(o => o.status === 'cancelled').length})
+            Cancelled ({orders.filter((o) => o.status === 'cancelled').length})
           </button>
         </div>
       </div>
@@ -590,7 +781,9 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-400">Loading orders...</td>
+                  <td colSpan={7} className="py-12 text-center text-slate-400">
+                    Loading orders...
+                  </td>
                 </tr>
               ) : filteredOrders.length === 0 ? (
                 <tr>
@@ -603,7 +796,7 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
                   <tr key={ord.id} className="hover:bg-slate-50/70 transition-colors">
                     <td className="px-4 py-3">
                       <a
-                        href={`/order/${ord.order_no}`}
+                        href={`/${activeSlug}/order/${encodeURIComponent(ord.order_no)}`}
                         className="font-mono font-bold text-orange-600 hover:underline block"
                       >
                         {ord.order_no}
@@ -611,7 +804,9 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
                     </td>
                     <td className="px-4 py-3">
                       <p className="font-bold text-slate-900">{ord.party_name}</p>
-                      {ord.gst_number && <p className="font-mono text-xs text-slate-400">{ord.gst_number}</p>}
+                      {ord.gst_number && (
+                        <p className="font-mono text-xs text-slate-400">{ord.gst_number}</p>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <p className="text-slate-800 font-medium">{ord.station || '-'}</p>
@@ -711,7 +906,16 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
       </div>
 
       {/* Create / Edit Order Modal */}
-      <Dialog open={showForm} onOpenChange={setShowForm}>
+      <Dialog
+        open={showForm}
+        onOpenChange={(open) => {
+          setShowForm(open)
+          if (!open) {
+            setShowScanner(false)
+            setEditingOrder(null)
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-[760px] max-h-[92vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">
@@ -738,7 +942,7 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
                 />
                 {showPartySuggestions && (
                   <div className="absolute top-full left-0 right-0 z-50 bg-white border border-slate-200 rounded-lg shadow-lg mt-1 overflow-hidden">
-                    {partySuggestions.map(p => (
+                    {partySuggestions.map((p) => (
                       <div
                         key={p.id}
                         onClick={() => selectParty(p)}
@@ -756,7 +960,10 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
                 <Label>Station / City</Label>
                 <Input
                   value={station}
-                  onChange={(e) => setStation(e.target.value)}
+                  onChange={(e) => {
+                    setStation(e.target.value)
+                    if (!editingOrder) updateSharedHeader({ station: e.target.value })
+                  }}
                   placeholder="e.g. Surat"
                 />
               </div>
@@ -770,7 +977,7 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
                 />
                 {showAgentSuggestions && (
                   <div className="absolute top-full left-0 right-0 z-50 bg-white border border-slate-200 rounded-lg shadow-lg mt-1 overflow-hidden">
-                    {agentSuggestions.map(a => (
+                    {agentSuggestions.map((a) => (
                       <div
                         key={a.id}
                         onClick={() => selectAgent(a)}
@@ -788,7 +995,11 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
                 <Label>GST Number</Label>
                 <Input
                   value={gstNumber}
-                  onChange={(e) => setGstNumber(e.target.value.toUpperCase())}
+                  onChange={(e) => {
+                    const val = e.target.value.toUpperCase()
+                    setGstNumber(val)
+                    if (!editingOrder) updateSharedHeader({ gstNumber: val })
+                  }}
                   placeholder="24AAAAA0000A1Z5"
                   className="font-mono text-xs"
                 />
@@ -799,7 +1010,10 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
                 <Input
                   type="date"
                   value={orderDate}
-                  onChange={(e) => setOrderDate(e.target.value)}
+                  onChange={(e) => {
+                    setOrderDate(e.target.value)
+                    if (!editingOrder) updateSharedHeader({ orderDate: e.target.value })
+                  }}
                 />
               </div>
 
@@ -808,7 +1022,10 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
                 <Input
                   type="date"
                   value={exportDate}
-                  onChange={(e) => setExportDate(e.target.value)}
+                  onChange={(e) => {
+                    setExportDate(e.target.value)
+                    if (!editingOrder) updateSharedHeader({ exportDate: e.target.value })
+                  }}
                 />
               </div>
             </div>
@@ -824,7 +1041,11 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
                   variant="outline"
                   size="sm"
                   onClick={() => setShowScanner(!showScanner)}
-                  className={`h-7 text-xs ${showScanner ? 'bg-orange-500 text-white border-orange-500' : 'bg-transparent text-white border-slate-700'}`}
+                  className={`h-7 text-xs ${
+                    showScanner
+                      ? 'bg-orange-500 text-white border-orange-500'
+                      : 'bg-transparent text-white border-slate-700'
+                  }`}
                 >
                   <Camera className="w-3.5 h-3.5 mr-1" />
                   {showScanner ? 'Close Camera' : 'Camera QR Scanner'}
@@ -834,7 +1055,10 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
               {/* QR Scanner Component */}
               {showScanner && (
                 <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-2">
-                  <div id="order-qr-reader" className="w-full max-w-xs mx-auto rounded overflow-hidden aspect-video bg-black" />
+                  <div
+                    id="order-qr-reader"
+                    className="w-full max-w-xs mx-auto rounded overflow-hidden aspect-video bg-black"
+                  />
                   <p className="text-[11px] text-center text-slate-400">
                     Point camera at product QR. Repeated scans automatically increase set quantities.
                   </p>
@@ -853,7 +1077,7 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
 
                 {searchResults.length > 0 && (
                   <div className="absolute top-full left-0 right-0 z-50 bg-white text-slate-900 border border-slate-200 rounded-lg shadow-xl mt-1 overflow-hidden divide-y">
-                    {searchResults.map(p => (
+                    {searchResults.map((p) => (
                       <div
                         key={p.id}
                         onClick={() => addItemFromProduct(p)}
@@ -861,15 +1085,23 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
                       >
                         <div className="flex items-center gap-2">
                           {p.image_url && (
-                            <img src={p.image_url} alt="" className="w-8 h-8 rounded object-cover" />
+                            <img
+                              src={p.image_url}
+                              alt=""
+                              className="w-8 h-8 rounded object-cover"
+                            />
                           )}
                           <div>
                             <p className="font-extrabold text-slate-900">{p.design_no}</p>
-                            <p className="text-slate-500 text-[10px]">{p.brand} • {p.fabric}</p>
+                            <p className="text-slate-500 text-[10px]">
+                              {p.brand} • {p.fabric}
+                            </p>
                           </div>
                         </div>
                         <div className="text-right">
-                          <p className="font-bold text-orange-600">{formatCurrency(p.rate || 0)}/pc</p>
+                          <p className="font-bold text-orange-600">
+                            {formatCurrency(p.rate || 0)}/pc
+                          </p>
                           <p className="text-slate-400 text-[10px]">{p.pcs_per_set || 1} pcs/set</p>
                         </div>
                       </div>
@@ -906,7 +1138,11 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
                         <td className="py-2 px-3 font-bold text-slate-900">
                           <div className="flex items-center gap-1.5">
                             {item.thumbnail && (
-                              <img src={item.thumbnail} alt="" className="w-6 h-6 rounded object-cover" />
+                              <img
+                                src={item.thumbnail}
+                                alt=""
+                                className="w-6 h-6 rounded object-cover"
+                              />
                             )}
                             {item.design_no}
                           </div>
@@ -917,7 +1153,9 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
                             min="0"
                             step="0.01"
                             value={item.rate}
-                            onChange={(e) => updateItem(idx, 'rate', parseFloat(e.target.value) || 0)}
+                            onChange={(e) =>
+                              updateItem(idx, 'rate', parseFloat(e.target.value) || 0)
+                            }
                             className="h-7 text-right text-xs p-1"
                           />
                         </td>
@@ -925,8 +1163,9 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
                           <Input
                             type="number"
                             min="1"
+                            max="500"
                             value={item.sets}
-                            onChange={(e) => updateItem(idx, 'sets', parseInt(e.target.value) || 0)}
+                            onChange={(e) => updateItem(idx, 'sets', parseInt(e.target.value) || 1)}
                             className="h-7 text-center text-xs p-1 font-bold text-slate-900"
                           />
                         </td>
@@ -935,7 +1174,9 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
                             type="number"
                             min="1"
                             value={item.pcs_per_set}
-                            onChange={(e) => updateItem(idx, 'pcs_per_set', parseInt(e.target.value) || 1)}
+                            onChange={(e) =>
+                              updateItem(idx, 'pcs_per_set', parseInt(e.target.value) || 1)
+                            }
                             className="h-7 text-center text-xs p-1"
                           />
                         </td>
@@ -964,29 +1205,55 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
             {/* Calculations Summary Box */}
             <div className="flex justify-between items-center bg-slate-50 p-3.5 rounded-lg border border-slate-200">
               <div className="flex gap-6 text-xs text-slate-600 font-medium">
-                <span>Total Items: <strong className="text-slate-900">{items.length}</strong></span>
-                <span>Total Sets: <strong className="text-slate-900">{totalSets}</strong></span>
-                <span>Total Pieces: <strong className="text-slate-900">{totalPieces}</strong></span>
+                <span>
+                  Total Items: <strong className="text-slate-900">{items.length}</strong>
+                </span>
+                <span>
+                  Total Sets: <strong className="text-slate-900">{totalSets}</strong>
+                </span>
+                <span>
+                  Total Pieces: <strong className="text-slate-900">{totalPieces}</strong>
+                </span>
               </div>
               <div className="text-right">
-                <span className="text-xs font-semibold text-slate-400 block uppercase tracking-wider">Total Amount</span>
-                <span className="text-2xl font-black text-orange-600">{formatCurrency(totalAmount)}</span>
+                <span className="text-xs font-semibold text-slate-400 block uppercase tracking-wider">
+                  Total Amount
+                </span>
+                <span className="text-2xl font-black text-orange-600">
+                  {formatCurrency(totalAmount)}
+                </span>
               </div>
             </div>
 
             {/* Form actions */}
-            <div className="flex justify-end gap-2 pt-3 border-t">
-              <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                onClick={handleSaveOrder}
-                disabled={formLoading || items.length === 0}
-                className="bg-slate-900 hover:bg-slate-800 text-white"
-              >
-                {formLoading ? 'Saving...' : editingOrder ? 'Update Order' : 'Save Draft Order'}
-              </Button>
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t">
+              <div>
+                {!editingOrder && (items.length > 0 || partyName.trim()) && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={discardSharedDraftAndReset}
+                    className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 text-xs"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 mr-1" />
+                    Discard Draft
+                  </Button>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
+                  Close
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleSaveOrder}
+                  disabled={formLoading || items.length === 0}
+                  className="bg-slate-900 hover:bg-slate-800 text-white"
+                >
+                  {formLoading ? 'Saving...' : editingOrder ? 'Update Order' : 'Save Draft Order'}
+                </Button>
+              </div>
             </div>
           </div>
         </DialogContent>
@@ -1005,7 +1272,9 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
           {confirmModalOrder && (
             <div className="space-y-4 pt-2 text-sm">
               <p className="text-slate-600">
-                Confirming Order <strong>{confirmModalOrder.order_no}</strong> for <strong>{confirmModalOrder.party_name}</strong> will lock the pricing and atomically deduct inventory quantities.
+                Confirming Order <strong>{confirmModalOrder.order_no}</strong> for{' '}
+                <strong>{confirmModalOrder.party_name}</strong> will lock the pricing and atomically
+                deduct inventory quantities.
               </p>
 
               <div className="space-y-1.5">
@@ -1015,8 +1284,10 @@ export default function OrderTab({ isStaff = false }: OrderTabProps) {
                   onChange={(e) => setDeductLocationId(e.target.value)}
                   className="w-full bg-white border border-slate-200 rounded-md p-2 text-sm font-medium"
                 >
-                  {locations.map(l => (
-                    <option key={l.id} value={String(l.id)}>{l.name}</option>
+                  {locations.map((l) => (
+                    <option key={l.id} value={String(l.id)}>
+                      {l.name}
+                    </option>
                   ))}
                 </select>
               </div>

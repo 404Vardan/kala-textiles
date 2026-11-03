@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SettingsDialog } from '@/components/admin/SettingsDialog'
 import { useAdminAuth } from '@/hooks/useAdminAuth'
+import { fetchOrderRequests } from '@/services/orderRequests'
 import DashboardTab from '@/components/admin/DashboardTab'
 import ProductTab from '@/components/admin/ProductTab'
 import StockTab from '@/components/admin/StockTab'
@@ -44,20 +45,39 @@ export default function AdminPage() {
   const { logout } = useAdminAuth()
   const [showSettings, setShowSettings] = useState(false)
   const [activeTab, setActiveTab] = useState('dashboard')
+  const [pendingRequestCount, setPendingRequestCount] = useState(0)
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
 
   // Handle tab from URL params
   useEffect(() => {
     const tab = searchParams.get('tab')
-    if (tab && TAB_CONFIG.some(t => t.value === tab)) {
+    if (tab && TAB_CONFIG.some((t) => t.value === tab)) {
       setActiveTab(tab)
     }
   }, [searchParams])
 
+  // Load pending buyer order request count for Orders tab badge
+  useEffect(() => {
+    let active = true
+    fetchOrderRequests('requested')
+      .then((reqs) => {
+        if (active) setPendingRequestCount(reqs.length)
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [activeTab])
+
   const handleTabChange = (val: string) => {
     setActiveTab(val)
     setSearchParams({ tab: val })
+  }
+
+  const handleOpenDraftFromScanner = () => {
+    setActiveTab('orders')
+    setSearchParams({ tab: 'orders', openDraft: '1' })
   }
 
   const handleLogout = async () => {
@@ -116,7 +136,7 @@ export default function AdminPage() {
           {/* Scrollable responsive tabs list */}
           <div className="bg-white p-1 rounded-xl border border-slate-200 shadow-2xs overflow-x-auto">
             <TabsList className="w-full flex justify-start gap-1 bg-transparent p-0">
-              {TAB_CONFIG.map(tab => (
+              {TAB_CONFIG.map((tab) => (
                 <TabsTrigger
                   key={tab.value}
                   value={tab.value}
@@ -124,6 +144,11 @@ export default function AdminPage() {
                 >
                   <tab.icon className="w-3.5 h-3.5" />
                   <span>{tab.label}</span>
+                  {tab.value === 'orders' && pendingRequestCount > 0 && (
+                    <span className="ml-1 inline-flex items-center justify-center px-1.5 py-0.2 text-[10px] font-extrabold bg-orange-600 text-white rounded-full">
+                      {pendingRequestCount}
+                    </span>
+                  )}
                 </TabsTrigger>
               ))}
             </TabsList>
@@ -146,7 +171,9 @@ export default function AdminPage() {
           </TabsContent>
 
           <TabsContent value="shopscan" className="mt-0 focus:outline-none">
-            {activeTab === 'shopscan' && <ShopScanTab />}
+            {activeTab === 'shopscan' && (
+              <ShopScanTab onOpenDraftOrder={handleOpenDraftFromScanner} />
+            )}
           </TabsContent>
 
           <TabsContent value="parties" className="mt-0 focus:outline-none">

@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useStaffAuth } from '@/hooks/useStaffAuth'
@@ -10,7 +10,21 @@ import { LogOut, ShoppingCart, ScanLine, Smartphone } from 'lucide-react'
 export default function StaffPage() {
   const { logout } = useStaffAuth()
   const [activeTab, setActiveTab] = useState('orders')
+  const [autoOpenDraft, setAutoOpenDraft] = useState(false)
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+
+  useEffect(() => {
+    if (searchParams.get('openDraft') === '1') {
+      setActiveTab('orders')
+      setAutoOpenDraft(true)
+    }
+  }, [searchParams])
+
+  const handleOpenDraftFromScanner = () => {
+    setActiveTab('orders')
+    setAutoOpenDraft(true)
+  }
 
   const handleLogout = async () => {
     await logout()
@@ -69,11 +83,19 @@ export default function StaffPage() {
           </TabsList>
 
           <TabsContent value="orders" className="mt-0 focus:outline-none">
-            {activeTab === 'orders' && <OrderTab isStaff={true} />}
+            {activeTab === 'orders' && (
+              <OrderTab
+                isStaff={true}
+                autoOpenDraft={autoOpenDraft}
+                onAutoOpenDraftHandled={() => setAutoOpenDraft(false)}
+              />
+            )}
           </TabsContent>
 
           <TabsContent value="scanner" className="mt-0 focus:outline-none">
-            {activeTab === 'scanner' && <ShopScanTab />}
+            {activeTab === 'scanner' && (
+              <ShopScanTab onOpenDraftOrder={handleOpenDraftFromScanner} />
+            )}
           </TabsContent>
         </Tabs>
       </main>

@@ -4,7 +4,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { fetchProduct, fetchProductMedia, searchProducts } from '@/services/products'
 import { fetchLocations, fetchStockByProduct } from '@/services/inventory'
+import { clampRequestSets } from '@/services/orderRequestCart'
 import { useQRScanner } from '@/hooks/useQRScanner'
+import { parseProductQRUrl } from '@/utils/qrcode'
+import { useAuth } from '@/contexts/AuthContext'
+import { useStaffOrderDraft } from '@/contexts/StaffOrderDraftContext'
 import type { Product, ProductMedia, InventoryStock, InventoryLocation } from '@/types'
 import { formatCurrency } from '@/utils/formatters'
 import {
@@ -18,10 +22,28 @@ import {
   ChevronRight,
   ExternalLink,
   AlertCircle,
+  Plus,
+  Minus,
+  CheckCircle2,
+  ClipboardList,
 } from 'lucide-react'
 
-export default function ShopScanTab() {
+interface ShopScanTabProps {
+  onOpenDraftOrder?: () => void
+}
+
+export default function ShopScanTab({ onOpenDraftOrder }: ShopScanTabProps = {}) {
   const navigate = useNavigate()
+  const { business, isOwner } = useAuth()
+  const {
+    addProductToDraft,
+    draft: staffDraft,
+    totalDesigns: draftDesigns,
+    totalSets: draftSets,
+  } = useStaffOrderDraft()
+
+  const activeSlug = (business?.slug || 'rangoli').trim().toLowerCase() || 'rangoli'
+
   const [isScanning, setIsScanning] = useState(false)
   const [scannedProduct, setScannedProduct] = useState<Product | null>(null)
   const [scannedMedia, setScannedMedia] = useState<ProductMedia[]>([])
@@ -33,13 +55,19 @@ export default function ShopScanTab() {
   const [manualResults, setManualResults] = useState<Product[]>([])
   const [searching, setSearching] = useState(false)
 
+  // Staff draft add controls
+  const [setsToAdd, setSetsToAdd] = useState(1)
+  const [addedFeedback, setAddedFeedback] = useState('')
+
   useEffect(() => {
     fetchLocations().then(setLocations).catch(console.error)
   }, [])
 
-  const loadProductFullDetails = async (designNo: string) => {
+  const loadProductFullDetails = useCallback(async (designNo: string) => {
     try {
       setError('')
+      setAddedFeedback('')
+      setSetsToAdd(1)
       const prod = await fetchProduct(designNo)
       setScannedProduct(prod)
 
@@ -57,16 +85,30 @@ export default function ShopScanTab() {
       setScannedMedia([])
       setScannedStock([])
     }
-  }
-
-  // Dual-mode fast QR scanner
-  const handleQRScan = useCallback((text: string) => {
-    const match = text.match(/\/p\/([^/?#]+)/)
-    const code = match ? match[1] : text.trim()
-    if (code) {
-      loadProductFullDetails(code)
-    }
   }, [])
+
+  // Dual-mode fast QR scanner with tenant validation
+  const handleQRScan = useCallback(
+    (text: string) => {
+      const parsed = parseProductQRUrl(text, activeSlug)
+      if (!parsed) {
+        setError('Invalid product QR code. Order or invoice QR codes cannot be scanned here.')
+        return
+      }
+
+      if (!parsed.isLegacy && parsed.slug !== activeSlug) {
+        setError(
+          `QR code belongs to another business ("${parsed.slug}"). Active business is "${activeSlug}".`
+        )
+        return
+      }
+
+      if (parsed.designNo) {
+        loadProductFullDetails(parsed.designNo)
+      }
+    },
+    [activeSlug, loadProductFullDetails]
+  )
 
   const { error: cameraError } = useQRScanner({
     elementId: 'shop-floor-scanner-view',
@@ -93,21 +135,67 @@ export default function ShopScanTab() {
     }
   }
 
-  // Location stock lookups
-  const godownId = locations.find(l => l.name.toLowerCase() === 'godown')?.id
-  const shopId = locations.find(l => l.name.toLowerCase() === 'shop')?.id
+  const handleAddToCurrentOrder = () => {
+    if (!scannedProduct) return
+    const clamped = clampRequestSets(setsToAdd)
+    const updated = addProductToDraft(scannedProduct, clamped)
+    setAddedFeedback(
+      `Added ${clamped} ${clamped === 1 ? 'set' : 'sets'} to current order (${updated.sets} ${
+        updated.sets === 1 ? 'set' : 'sets'
+      } total for ${scannedProduct.design_no})`
+    )
+    setSetsToAdd(1)
+  }
 
-  const godownStock = scannedStock.find(s => s.location_id === godownId)
-  const shopStock = scannedStock.find(s => s.location_id === shopId)
+  const handleGoToDraftOrder = () => {
+    if (onOpenDraftOrder) {
+      onOpenDraftOrder()
+      return
+    }
+    navigate(isOwner ? '/admin?tab=orders&openDraft=1' : '/staff?openDraft=1')
+  }
+
+  // Location stock lookups
+  const godownId = locations.find((l) => l.name.toLowerCase().includes('godown'))?.id
+  const shopId = locations.find((l) => l.name.toLowerCase().includes('shop'))?.id
+
+  const godownStock = scannedStock.find((s) => s.location_id === godownId)
+  const shopStock = scannedStock.find((s) => s.location_id === shopId)
+
+  const existingDraftItem = scannedProduct
+    ? staffDraft.items.find(
+        (i) =>
+          i.product_id === scannedProduct.id ||
+          i.design_no.trim().toUpperCase() === scannedProduct.design_no.trim().toUpperCase()
+      )
+    : undefined
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       {/* Top Banner */}
-      <div className="text-center space-y-1">
-        <h2 className="text-2xl font-black text-slate-900 tracking-tight">Staff Terminal & Scanner</h2>
-        <p className="text-slate-500 text-sm">
-          Scan QR tags or search design numbers to view real-time warehouse & shop availability
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="space-y-1">
+          <h2 className="text-2xl font-black text-slate-900 tracking-tight">
+            Staff Terminal & Scanner
+          </h2>
+          <p className="text-slate-500 text-sm">
+            Scan QR tags or search design numbers to view real-time warehouse & shop availability
+          </p>
+        </div>
+
+        {draftDesigns > 0 && (
+          <Button
+            type="button"
+            onClick={handleGoToDraftOrder}
+            className="bg-orange-600 hover:bg-orange-700 text-white font-semibold gap-2 rounded-xl shrink-0"
+          >
+            <ClipboardList className="w-4 h-4" />
+            <span>
+              Draft Order: {draftDesigns} {draftDesigns === 1 ? 'Design' : 'Designs'} ({draftSets}{' '}
+              {draftSets === 1 ? 'Set' : 'Sets'})
+            </span>
+          </Button>
+        )}
       </div>
 
       {/* Camera Trigger / Active Scanner */}
@@ -121,7 +209,9 @@ export default function ShopScanTab() {
               <Camera className="w-5 h-5 mr-2" />
               Start Camera Scanner
             </Button>
-            <p className="text-xs text-slate-400">Continuous scanning with GPU-accelerated Barcode API</p>
+            <p className="text-xs text-slate-400">
+              Continuous scanning with GPU-accelerated Barcode API
+            </p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -148,7 +238,8 @@ export default function ShopScanTab() {
             {cameraError && (
               <div className="text-xs bg-rose-50 text-rose-700 p-2.5 rounded-lg border border-rose-200 flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0" />
-                {cameraError}. Please ensure camera permissions are allowed, or use manual search below.
+                {cameraError}. Please ensure camera permissions are allowed, or use manual search
+                below.
               </div>
             )}
           </div>
@@ -173,7 +264,7 @@ export default function ShopScanTab() {
 
           {manualResults.length > 0 && (
             <div className="mt-2 bg-slate-50 border border-slate-200 rounded-lg divide-y max-h-48 overflow-y-auto">
-              {manualResults.map(p => (
+              {manualResults.map((p) => (
                 <div
                   key={p.id}
                   onClick={() => {
@@ -183,7 +274,9 @@ export default function ShopScanTab() {
                   }}
                   className="p-2.5 hover:bg-orange-50 cursor-pointer flex justify-between items-center text-xs"
                 >
-                  <span className="font-bold text-slate-900">{p.design_no} ({p.brand || 'No brand'})</span>
+                  <span className="font-bold text-slate-900">
+                    {p.design_no} ({p.brand || 'No brand'})
+                  </span>
                   <span className="text-orange-600 font-bold">{formatCurrency(p.rate || 0)}</span>
                 </div>
               ))}
@@ -227,7 +320,11 @@ export default function ShopScanTab() {
               {scannedMedia.length > 1 && (
                 <>
                   <button
-                    onClick={() => setCurrentMediaIdx((prev) => (prev - 1 + scannedMedia.length) % scannedMedia.length)}
+                    onClick={() =>
+                      setCurrentMediaIdx(
+                        (prev) => (prev - 1 + scannedMedia.length) % scannedMedia.length
+                      )
+                    }
                     className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/60 text-white p-2 rounded-full hover:bg-black"
                   >
                     <ChevronLeft className="w-4 h-4" />
@@ -254,7 +351,9 @@ export default function ShopScanTab() {
           <div className="p-6 space-y-5">
             <div className="flex justify-between items-start">
               <div>
-                <span className="text-xs uppercase tracking-wider font-bold text-slate-400">Design Number</span>
+                <span className="text-xs uppercase tracking-wider font-bold text-slate-400">
+                  Design Number
+                </span>
                 <h3 className="text-3xl font-black text-slate-900">{scannedProduct.design_no}</h3>
                 <div className="flex flex-wrap gap-1.5 mt-1.5">
                   {scannedProduct.brand && (
@@ -276,7 +375,9 @@ export default function ShopScanTab() {
               </div>
 
               <div className="text-right">
-                <span className="text-xs text-slate-400 uppercase tracking-wider font-semibold block">Wholesale Rate</span>
+                <span className="text-xs text-slate-400 uppercase tracking-wider font-semibold block">
+                  Wholesale Rate
+                </span>
                 <p className="text-2xl font-black text-orange-600">
                   {scannedProduct.rate ? formatCurrency(scannedProduct.rate) : '-'}
                   <span className="text-xs text-slate-400 font-normal">/pc</span>
@@ -284,7 +385,8 @@ export default function ShopScanTab() {
                 {scannedProduct.pcs_per_set && (
                   <p className="text-xs text-slate-500 font-medium">
                     {scannedProduct.pcs_per_set} pcs/set
-                    {scannedProduct.rate && ` • ${formatCurrency(scannedProduct.rate * scannedProduct.pcs_per_set)}/set`}
+                    {scannedProduct.rate &&
+                      ` • ${formatCurrency(scannedProduct.rate * scannedProduct.pcs_per_set)}/set`}
                   </p>
                 )}
               </div>
@@ -299,7 +401,8 @@ export default function ShopScanTab() {
                   <span>Shop Floor Stock</span>
                 </div>
                 <p className="text-xl font-black text-slate-900">
-                  {shopStock?.sets || 0} <span className="text-xs font-normal text-slate-500">sets</span>
+                  {shopStock?.sets || 0}{' '}
+                  <span className="text-xs font-normal text-slate-500">sets</span>
                 </p>
                 <p className="text-xs text-slate-600 font-medium font-mono">
                   {shopStock?.total_pcs || 0} pieces ready
@@ -313,7 +416,8 @@ export default function ShopScanTab() {
                   <span>Godown Warehouse</span>
                 </div>
                 <p className="text-xl font-black text-slate-900">
-                  {godownStock?.sets || 0} <span className="text-xs font-normal text-slate-500">sets</span>
+                  {godownStock?.sets || 0}{' '}
+                  <span className="text-xs font-normal text-slate-500">sets</span>
                 </p>
                 <p className="text-xs text-slate-600 font-medium font-mono">
                   {godownStock?.total_pcs || 0} pieces stored
@@ -327,23 +431,88 @@ export default function ShopScanTab() {
               </p>
             )}
 
-            {/* Action buttons */}
-            <div className="flex gap-2 pt-2">
-              <Button
-                onClick={() => navigate('/staff')}
-                className="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-bold"
-              >
-                <ShoppingCart className="w-4 h-4 mr-1.5" />
-                Add Design to Order
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => navigate(`/p/${scannedProduct.design_no}`)}
-                className="text-slate-700"
-              >
-                <ExternalLink className="w-4 h-4 mr-1.5" />
-                Customer Page
-              </Button>
+            {/* Shared Staff Order Draft Controls */}
+            <div className="pt-3 border-t border-slate-100 space-y-3">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-slate-700">Sets to Add to Current Order</span>
+                {existingDraftItem && (
+                  <span className="font-bold text-orange-600 bg-orange-50 px-2.5 py-0.5 rounded-full">
+                    In Current Order: {existingDraftItem.sets}{' '}
+                    {existingDraftItem.sets === 1 ? 'set' : 'sets'}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+                <div className="inline-flex items-center border border-slate-200 rounded-xl bg-slate-50 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setSetsToAdd((prev) => clampRequestSets(prev - 1))}
+                    disabled={setsToAdd <= 1}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-700 hover:bg-white disabled:opacity-40"
+                  >
+                    <Minus className="w-4 h-4" />
+                  </button>
+                  <input
+                    type="number"
+                    min={1}
+                    max={500}
+                    value={setsToAdd}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10)
+                      if (!Number.isNaN(val)) {
+                        setSetsToAdd(clampRequestSets(val))
+                      }
+                    }}
+                    className="w-12 text-center font-bold text-sm bg-transparent focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setSetsToAdd((prev) => clampRequestSets(prev + 1))}
+                    disabled={setsToAdd >= 500}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-700 hover:bg-white disabled:opacity-40"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <Button
+                  type="button"
+                  onClick={handleAddToCurrentOrder}
+                  className="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-bold"
+                >
+                  <ShoppingCart className="w-4 h-4 mr-1.5" />
+                  Add to Current Order
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() =>
+                    navigate(`/${activeSlug}/p/${encodeURIComponent(scannedProduct.design_no)}`)
+                  }
+                  className="text-slate-700"
+                >
+                  <ExternalLink className="w-4 h-4 mr-1.5" />
+                  Customer Page
+                </Button>
+              </div>
+
+              {addedFeedback && (
+                <div className="flex items-center justify-between gap-2 bg-emerald-50 border border-emerald-200 text-emerald-800 px-3.5 py-2.5 rounded-xl text-xs font-medium">
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>{addedFeedback}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleGoToDraftOrder}
+                    className="font-bold underline text-emerald-900 shrink-0"
+                  >
+                    Open Draft Order →
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>

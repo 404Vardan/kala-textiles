@@ -1,6 +1,107 @@
 import QRCode from 'qrcode'
 import type { Product } from '@/types'
 
+export interface ParsedProductQR {
+  slug: string
+  designNo: string
+  isLegacy: boolean
+}
+
+function safeDecodeURIComponent(value: string): string {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
+/**
+ * Shared product QR URL parser.
+ * Parses:
+ *  - https://domain.com/:slug/p/:designNo
+ *  - https://domain.com/p/:designNo (legacy, defaults slug to defaultSlug)
+ *  - /:slug/p/:designNo or /p/:designNo
+ *  - Raw design number codes (e.g. "D-101")
+ * Rejects /order/ and /invoice/ URLs or arbitrary non-product URLs by returning null.
+ */
+export function parseProductQRUrl(
+  rawInput: string,
+  defaultSlug: string = 'rangoli'
+): ParsedProductQR | null {
+  const trimmed = (rawInput || '').trim()
+  if (!trimmed) return null
+
+  const normalizedDefaultSlug = (defaultSlug || 'rangoli').trim().toLowerCase() || 'rangoli'
+
+  // Explicitly reject order and invoice QR URLs in product scan flows
+  if (/\/(order|invoice|order-request)(\/|$|\?|#)/i.test(trimmed)) {
+    return null
+  }
+
+  let pathname = trimmed
+  const isUrlLike = /^https?:\/\//i.test(trimmed) || trimmed.startsWith('/') || trimmed.includes('/p/')
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const urlObj = new URL(trimmed)
+      pathname = urlObj.pathname
+    } catch {
+      return null
+    }
+  } else if (trimmed.includes('/p/') && !trimmed.startsWith('/')) {
+    // Handle domain without protocol e.g. rangolitextiles.in/rangoli/p/101
+    const slashIdx = trimmed.indexOf('/')
+    pathname = slashIdx >= 0 ? trimmed.slice(slashIdx) : trimmed
+  }
+
+  if (isUrlLike) {
+    // Match /:slug/p/:designNo
+    const tenantMatch = pathname.match(/^\/([^/]+)\/p\/([^/?#]+)\/?$/i)
+    if (tenantMatch) {
+      const slug = safeDecodeURIComponent(tenantMatch[1]).trim().toLowerCase()
+      const designNo = safeDecodeURIComponent(tenantMatch[2]).trim()
+      if (!slug || !designNo) return null
+      return {
+        slug,
+        designNo,
+        isLegacy: false,
+      }
+    }
+
+    // Match legacy /p/:designNo
+    const legacyMatch = pathname.match(/^\/p\/([^/?#]+)\/?$/i)
+    if (legacyMatch) {
+      const designNo = safeDecodeURIComponent(legacyMatch[1]).trim()
+      if (!designNo) return null
+      return {
+        slug: normalizedDefaultSlug,
+        designNo,
+        isLegacy: true,
+      }
+    }
+
+    // Any other URL path is not a valid product QR
+    return null
+  }
+
+  // Raw design number fallback (for plain text QR/barcodes without URL structure)
+  if (trimmed.includes('/') || trimmed.includes(' ')) {
+    // Allow spaces inside design numbers only if reasonable length and not a sentence/URL
+    if (trimmed.includes('://') || trimmed.length > 60) {
+      return null
+    }
+  }
+
+  const designNo = safeDecodeURIComponent(trimmed).trim()
+  if (!designNo || designNo.length > 60) return null
+
+  return {
+    slug: normalizedDefaultSlug,
+    designNo,
+    isLegacy: true,
+  }
+}
+
 export function getPermanentProductUrl(designNo: string, slug: string = 'rangoli', customDomain?: string): string {
   const domain = (
     customDomain ||
