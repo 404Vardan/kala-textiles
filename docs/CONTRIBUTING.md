@@ -17,8 +17,8 @@ Thank you for your interest in contributing to **Kala — Textile Wholesale Mana
 1. Fork and clone the repository:
 
    ```bash
-   git clone https://github.com/404Vardan/rangoli-.git
-   cd rangoli-
+   git clone https://github.com/404Vardan/kala-textiles.git
+   cd kala-textiles
    ```
 
 2. Install dependencies:

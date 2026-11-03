@@ -14,7 +14,7 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Transactional_RPCs-1C1917?style=flat-square&logo=postgresql&logoColor=4169E1)](https://www.postgresql.org/)
 [![Capacitor](https://img.shields.io/badge/Capacitor-8.2_Android-1C1917?style=flat-square&logo=capacitor&logoColor=119EFF)](https://capacitorjs.com/)
 [![License](https://img.shields.io/badge/License-All_Rights_Reserved-C2410C?style=flat-square)](LICENSE)
-[![GitHub](https://img.shields.io/badge/GitHub-404Vardan%2Frangoli---1C1917?style=flat-square&logo=github&logoColor=FFFFFF)](https://github.com/404Vardan/rangoli-)
+[![GitHub](https://img.shields.io/badge/GitHub-404Vardan%2Fkala--textiles-1C1917?style=flat-square&logo=github&logoColor=FFFFFF)](https://github.com/404Vardan/kala-textiles)
 
 [System Specification](docs/SPEC.md) · [Architecture Guide](docs/ARCHITECTURE.md) · [Contributing Guide](docs/CONTRIBUTING.md) · [Supabase Setup](SUPABASE_SETUP.md)
 
@@ -72,6 +72,9 @@ Traditional wholesale textile showrooms and godowns face recurring operational b
 
 ## 5. Application Screenshots
 
+> [!NOTE]
+> **Demonstration Data Notice:** All customer/party names (`Demo Buyer Firm`), phone numbers (`+91 90000 00000`), design codes, stock counts, and order/invoice numbers (`DEMO-2026-0042`, `DEMO-INV-0108`) shown in the screenshots below are synthetic demonstration data created solely to illustrate the application interface.
+
 | **1. Public Landing Page (`/`)** | **2. Public QR Product Page (`/:slug/p/:designNo`)** |
 | :---: | :---: |
 | ![Kala Landing Page](docs/assets/screenshots/landing-page.png) | ![Kala Product QR Page](docs/assets/screenshots/product-page.png) |
@@ -81,10 +84,10 @@ Traditional wholesale textile showrooms and godowns face recurring operational b
 | *Multi-design order request review with **Send to Shop** (`submit_order_request` RPC) and **Send on WhatsApp**.* | *Real-time KPIs across Active Catalog, Godown Stock, Shop Floor Stock, Confirmed Orders, and Stock Movements.* |
 | **5. Multi-Location Inventory (`/admin?tab=stock`)** | **6. Wholesale Order Form & PDF (`/:slug/order/:orderNo`)** |
 | ![Inventory Management](docs/assets/screenshots/inventory-management.png) | ![Wholesale Order Form](docs/assets/screenshots/order-form.png) |
-| *Dual-location ledger (**Godown Warehouse** vs **Shop Floor**) with transactional inward intake and transfers.* | *Print-ready A4 wholesale order sheet (`RNG-2026-0042`) with vector KALA header and set/piece totals.* |
+| *Dual-location ledger (**Godown Warehouse** vs **Shop Floor**) with transactional inward intake and transfers.* | *Print-ready A4 wholesale order sheet (`DEMO-2026-0042`) with vector KALA header and set/piece totals.* |
 | **7. Wholesale Invoice PDF (`/:slug/invoice/:invoiceNo`)** | **8. Staff Floor Scanner (`/staff`)** |
 | ![Wholesale Invoice PDF](docs/assets/screenshots/invoice-pdf.png) | ![Staff Floor Scanner](docs/assets/screenshots/staff-scanner.png) |
-| *Kala-branded A4 wholesale invoice (`INV-2026-0108`) with itemized set breakdown and signatory block.* | *Mobile terminal with camera QR recognition, live Godown/Shop stock check, and shared draft order bar.* |
+| *Kala-branded A4 wholesale invoice (`DEMO-INV-0108`) with itemized set breakdown and signatory block.* | *Mobile terminal with camera QR recognition, live Godown/Shop stock check, and shared draft order bar.* |
 
 ---
 
@@ -309,8 +312,8 @@ kala-textiles/
 1. **Clone the repository:**
 
    ```bash
-   git clone https://github.com/404Vardan/rangoli-.git
-   cd rangoli-
+   git clone https://github.com/404Vardan/kala-textiles.git
+   cd kala-textiles
    ```
 
 2. **Install dependencies:**
@@ -417,7 +420,7 @@ This repository and its source code, database migrations, branding assets, and d
 
 ## 16. Author & Project Credits
 
-- **Repository:** [github.com/404Vardan/rangoli-](https://github.com/404Vardan/rangoli-)
+- **Repository:** [github.com/404Vardan/kala-textiles](https://github.com/404Vardan/kala-textiles)
 - **Maintainer:** [@404Vardan](https://github.com/404Vardan)
 - **Domain:** Commercial Textile Wholesale & Multi-Location Inventory Operations
 
