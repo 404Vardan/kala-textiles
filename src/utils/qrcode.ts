@@ -102,12 +102,24 @@ export function parseProductQRUrl(
   }
 }
 
-export function getPermanentProductUrl(designNo: string, slug: string = 'rangoli', customDomain?: string): string {
-  const domain = (
+function resolvePublishedOrigin(customDomain?: string): string {
+  const candidate = (
     customDomain ||
     import.meta.env.VITE_PUBLISHED_DOMAIN ||
-    (typeof window !== 'undefined' ? window.location.origin : 'https://kala.app')
-  ).replace(/\/$/, '')
+    (typeof window !== 'undefined' ? window.location.origin : '')
+  ).trim()
+
+  if (!candidate) {
+    throw new Error(
+      'Unable to resolve application domain for QR generation. Configure VITE_PUBLISHED_DOMAIN or run in a browser context.'
+    )
+  }
+
+  return candidate.replace(/\/$/, '')
+}
+
+export function getPermanentProductUrl(designNo: string, slug: string = 'rangoli', customDomain?: string): string {
+  const domain = resolvePublishedOrigin(customDomain)
 
   return `${domain}/${slug}/p/${encodeURIComponent(designNo.trim())}`
 }
@@ -136,11 +148,7 @@ export async function generateQRCodeForProduct(designNo: string, slug: string = 
 }
 
 export async function generateQRCodeForInvoice(invoiceNo: string, slug: string = 'rangoli', customDomain?: string): Promise<string> {
-  const domain = (
-    customDomain ||
-    import.meta.env.VITE_PUBLISHED_DOMAIN ||
-    (typeof window !== 'undefined' ? window.location.origin : 'https://kala.app')
-  ).replace(/\/$/, '')
+  const domain = resolvePublishedOrigin(customDomain)
   return generateQRCode(`${domain}/${slug}/invoice/${encodeURIComponent(invoiceNo)}`)
 }
 

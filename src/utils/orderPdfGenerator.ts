@@ -417,16 +417,16 @@ export async function generateOrderPdf({
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(7.5)
     doc.setTextColor(120, 113, 108)
-    doc.text('TERMS & CONDITIONS:', margin, currentY + 5)
+    doc.text('ORDER NOTES:', margin, currentY + 5)
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(7)
     doc.text(
-      '1. Wholesale dispatch is processed in complete sets as specified above.',
+      `Order Reference: ${order.order_no}  |  Party: ${order.party_name || '-'}`,
       margin,
       currentY + 10
     )
     doc.text(
-      '2. Goods once dispatched will not be returned without prior authorization.',
+      'No additional dispatch notes recorded for this wholesale order.',
       margin,
       currentY + 14.5
     )

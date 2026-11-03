@@ -72,15 +72,19 @@ Traditional wholesale textile showrooms and godowns face recurring operational b
 
 ## 5. Application Screenshots
 
-> **Note on Visual Assets:** The repository includes custom SVG branding (`docs/assets/readme-banner.svg`) and social preview artwork (`docs/assets/social-preview.png`). To attach live production screenshots from your local or hosted environment, save captures under `docs/assets/screenshots/` using the filenames listed below.
-
-| Screen | Recommended Asset Path | Description |
-| :--- | :--- | :--- |
-| **Public QR Product Page** | `docs/assets/screenshots/product-page.png` | Desktop 2-column & mobile stacked view of `/:slug/p/:designNo` showing media gallery, set ratio, quantity stepper, and floating order bar. |
-| **Buyer Order Request Checkout** | `docs/assets/screenshots/order-request-page.png` | `/:slug/order-request` screen with selected designs, set steppers, buyer details form, and **Send on WhatsApp** / **Send to Shop** actions. |
-| **Owner Executive Dashboard** | `docs/assets/screenshots/admin-dashboard.png` | `/admin` overview showing Active Products, Godown Stock, Shop Floor Stock, Order KPIs, and Recent Movements. |
-| **Orders & Buyer QR Requests** | `docs/assets/screenshots/admin-orders.png` | `OrderTab` with the **Buyer QR Order Requests** conversion queue (`Requested` / `Converted` / `Rejected`) and wholesale orders table. |
-| **Staff Floor Scanner Terminal** | `docs/assets/screenshots/staff-scanner.png` | `/staff` mobile terminal showing live QR camera scanner, Shop Floor vs Godown stock cards, and persistent active draft order bar. |
+| **1. Public Landing Page (`/`)** | **2. Public QR Product Page (`/:slug/p/:designNo`)** |
+| :---: | :---: |
+| ![Kala Landing Page](docs/assets/screenshots/landing-page.png) | ![Kala Product QR Page](docs/assets/screenshots/product-page.png) |
+| *Commercial entry portal with design lookup, QR scanner, and role workspaces.* | *Wholesale design specification, set ratio (`4 pcs/set`), quantity stepper, and floating order bar.* |
+| **3. Buyer Order Checkout (`/:slug/order-request`)** | **4. Owner Executive Dashboard (`/admin`)** |
+| ![Buyer Order Checkout](docs/assets/screenshots/order-request-page.png) | ![Owner Admin Dashboard](docs/assets/screenshots/admin-dashboard.png) |
+| *Multi-design order request review with **Send to Shop** (`submit_order_request` RPC) and **Send on WhatsApp**.* | *Real-time KPIs across Active Catalog, Godown Stock, Shop Floor Stock, Confirmed Orders, and Stock Movements.* |
+| **5. Multi-Location Inventory (`/admin?tab=stock`)** | **6. Wholesale Order Form & PDF (`/:slug/order/:orderNo`)** |
+| ![Inventory Management](docs/assets/screenshots/inventory-management.png) | ![Wholesale Order Form](docs/assets/screenshots/order-form.png) |
+| *Dual-location ledger (**Godown Warehouse** vs **Shop Floor**) with transactional inward intake and transfers.* | *Print-ready A4 wholesale order sheet (`RNG-2026-0042`) with vector KALA header and set/piece totals.* |
+| **7. Wholesale Invoice PDF (`/:slug/invoice/:invoiceNo`)** | **8. Staff Floor Scanner (`/staff`)** |
+| ![Wholesale Invoice PDF](docs/assets/screenshots/invoice-pdf.png) | ![Staff Floor Scanner](docs/assets/screenshots/staff-scanner.png) |
+| *Kala-branded A4 wholesale invoice (`INV-2026-0108`) with itemized set breakdown and signatory block.* | *Mobile terminal with camera QR recognition, live Godown/Shop stock check, and shared draft order bar.* |
 
 ---
 
@@ -223,15 +227,18 @@ For a deep dive into the schema, triggers, and RPCs, see **[docs/ARCHITECTURE.md
 ## 9. Project Structure
 
 ```text
-rangoli-textiles/
+kala-textiles/
 ├── .github/
 │   ├── ISSUE_TEMPLATE/
 │   │   ├── bug_report.yml               # Structured GitHub bug report form
 │   │   └── feature_request.yml          # Structured GitHub feature request form
+│   ├── workflows/
+│   │   └── ci.yml                       # GitHub Actions CI (tsc --noEmit & vite build)
 │   └── pull_request_template.md         # Standard PR checklist and verification template
 ├── android/                             # Capacitor Android native project
 ├── docs/
 │   ├── assets/
+│   │   ├── screenshots/                 # Application screen previews (8 screens)
 │   │   ├── readme-banner.svg            # Custom repository header banner
 │   │   └── social-preview.png           # 1280x640 GitHub social preview card
 │   ├── ARCHITECTURE.md                  # Deep-dive system & database architecture guide
@@ -280,6 +287,7 @@ rangoli-textiles/
 │   ├── main.tsx                         # React DOM root entry
 │   └── style.css                        # Tailwind CSS v4 & commercial design system variables
 ├── .env.example                         # Template for required Vite environment variables
+├── LICENSE                              # All Rights Reserved proprietary showcase notice
 ├── capacitor.config.ts                  # Capacitor mobile configuration
 ├── package.json                         # Dependencies and build scripts
 ├── tsconfig.json                        # Strict TypeScript compiler configuration

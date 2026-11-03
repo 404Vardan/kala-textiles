@@ -252,15 +252,15 @@ export default function InvoicePage() {
             </table>
           </div>
 
-          {/* Declaration, Signatory & Financial Summary */}
+          {/* Document Details, Signatory & Financial Summary */}
           <div className="flex flex-col sm:flex-row justify-between items-start gap-6 pt-2">
             <div className="space-y-4 flex-1">
               <div className="text-xs text-stone-500 space-y-1">
                 <p className="font-bold text-stone-700 uppercase tracking-wider text-[11px]">
-                  Declaration & Terms
+                  Document Details
                 </p>
-                <p>1. Certified that the particulars given above are true and correct.</p>
-                <p>2. Subject to local wholesale market jurisdiction.</p>
+                <p>Invoice Reference: {invoice.invoice_no}</p>
+                <p>System-generated wholesale invoice summary for {invoice.party_name}.</p>
               </div>
 
               <div className="border border-stone-200 rounded-lg p-3.5 w-56 bg-stone-50/50">

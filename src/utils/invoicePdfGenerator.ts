@@ -248,15 +248,15 @@ export async function generateInvoicePdf({
 
   currentY += 6
 
-  // Left: Terms & Signatory Box
+  // Left: Document Notes & Signatory Box
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(7.5)
   doc.setTextColor(120, 113, 108)
-  doc.text('DECLARATION & TERMS:', margin, currentY + 4)
+  doc.text('DOCUMENT DETAILS:', margin, currentY + 4)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7)
-  doc.text('1. Certified that the particulars given above are true and correct.', margin, currentY + 9)
-  doc.text('2. Subject to local wholesale market jurisdiction.', margin, currentY + 13.5)
+  doc.text(`Invoice Reference: ${invoice.invoice_no}`, margin, currentY + 9)
+  doc.text(`System-generated wholesale invoice summary for ${invoice.party_name || '-'}.`, margin, currentY + 13.5)
 
   // Authorized Signatory Box
   doc.setDrawColor(214, 211, 209)

@@ -94,7 +94,7 @@ export default function LoginPage() {
                   id="email"
                   type="email"
                   required
-                  placeholder="admin@kala.app"
+                  placeholder="owner@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   disabled={loading}

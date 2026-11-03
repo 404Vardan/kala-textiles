@@ -364,10 +364,10 @@ export default function OrderPage() {
               ) : (
                 <div className="text-xs text-stone-500 space-y-1 pt-1">
                   <p className="font-bold text-stone-700 uppercase tracking-wider text-[11px]">
-                    Wholesale Dispatch Terms
+                    Order Notes
                   </p>
-                  <p>1. Dispatch is processed in complete sets as specified above.</p>
-                  <p>2. Goods once sold will not be returned without prior authorization.</p>
+                  <p>Order Reference: {order.order_no}</p>
+                  <p>No additional dispatch notes recorded for this order.</p>
                 </div>
               )}
             </div>
