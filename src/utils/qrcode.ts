@@ -106,7 +106,7 @@ export function getPermanentProductUrl(designNo: string, slug: string = 'rangoli
   const domain = (
     customDomain ||
     import.meta.env.VITE_PUBLISHED_DOMAIN ||
-    (typeof window !== 'undefined' ? window.location.origin : 'https://rangolitextiles.in')
+    (typeof window !== 'undefined' ? window.location.origin : 'https://kala.app')
   ).replace(/\/$/, '')
 
   return `${domain}/${slug}/p/${encodeURIComponent(designNo.trim())}`
@@ -120,7 +120,7 @@ export async function generateQRCode(text: string): Promise<string> {
       width: 400,
       margin: 1,
       color: {
-        dark: '#1e293b',
+        dark: '#1c1917',
         light: '#ffffff',
       },
     })
@@ -139,7 +139,7 @@ export async function generateQRCodeForInvoice(invoiceNo: string, slug: string =
   const domain = (
     customDomain ||
     import.meta.env.VITE_PUBLISHED_DOMAIN ||
-    (typeof window !== 'undefined' ? window.location.origin : 'https://rangolitextiles.in')
+    (typeof window !== 'undefined' ? window.location.origin : 'https://kala.app')
   ).replace(/\/$/, '')
   return generateQRCode(`${domain}/${slug}/invoice/${encodeURIComponent(invoiceNo)}`)
 }
@@ -154,7 +154,7 @@ export function downloadQRCode(dataUrl: string, filename: string) {
   document.body.removeChild(link)
 }
 
-export function printProductLabel(product: Product, qrDataUrl: string) {
+export function printProductLabel(product: Product, qrDataUrl: string, businessName?: string) {
   const printWindow = window.open('', '_blank', 'width=600,height=700')
   if (!printWindow) {
     alert('Please allow popups to print labels.')
@@ -162,13 +162,14 @@ export function printProductLabel(product: Product, qrDataUrl: string) {
   }
 
   const publicUrl = getPermanentProductUrl(product.design_no)
+  const displayBrand = (businessName && !/rangoli/i.test(businessName) ? businessName : 'KALA').toUpperCase()
 
   printWindow.document.write(`
     <!DOCTYPE html>
     <html>
     <head>
       <meta charset="utf-8">
-      <title>Label - ${product.design_no}</title>
+      <title>Kala Label - ${product.design_no}</title>
       <style>
         @page {
           size: 75mm 50mm;
@@ -185,7 +186,7 @@ export function printProductLabel(product: Product, qrDataUrl: string) {
           height: 50mm;
           padding: 3mm 4mm;
           background: #fff;
-          color: #0f172a;
+          color: #1c1917;
           display: flex;
           flex-direction: column;
           justify-content: space-between;
@@ -194,20 +195,21 @@ export function printProductLabel(product: Product, qrDataUrl: string) {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          border-bottom: 1.5px solid #0f172a;
+          border-bottom: 1.5px solid #1c1917;
           padding-bottom: 2mm;
         }
         .brand-title {
           font-size: 11pt;
           font-weight: 900;
-          letter-spacing: 0.5px;
+          letter-spacing: 0.8px;
           text-transform: uppercase;
         }
         .tagline {
-          font-size: 6pt;
-          font-weight: 600;
-          color: #64748b;
+          font-size: 5.8pt;
+          font-weight: 700;
+          color: #57534e;
           text-transform: uppercase;
+          letter-spacing: 0.5px;
         }
         .body {
           display: flex;
@@ -223,24 +225,24 @@ export function printProductLabel(product: Product, qrDataUrl: string) {
         .design-label {
           font-size: 7pt;
           font-weight: 700;
-          color: #64748b;
+          color: #57534e;
           text-transform: uppercase;
         }
         .design-no {
           font-size: 16pt;
           font-weight: 900;
-          color: #0f172a;
+          color: #1c1917;
           line-height: 1.1;
           margin-bottom: 1.5mm;
         }
         .meta-row {
           font-size: 7.5pt;
           line-height: 1.3;
-          color: #334155;
+          color: #292524;
         }
         .meta-row strong {
           font-weight: 700;
-          color: #0f172a;
+          color: #1c1917;
         }
         .qr-box {
           display: flex;
@@ -255,42 +257,43 @@ export function printProductLabel(product: Product, qrDataUrl: string) {
         }
         .qr-caption {
           font-size: 5pt;
-          color: #64748b;
+          color: #57534e;
           margin-top: 1mm;
           text-align: center;
+          font-weight: 600;
         }
         .footer {
-          border-top: 1px dashed #cbd5e1;
+          border-top: 1px dashed #d6d3d1;
           padding-top: 1.5mm;
           display: flex;
           justify-content: space-between;
           align-items: center;
           font-size: 6.5pt;
           font-weight: 600;
-          color: #475569;
+          color: #57534e;
         }
         .price {
           font-size: 10pt;
           font-weight: 900;
-          color: #ea580c;
+          color: #c2410c;
         }
       </style>
     </head>
     <body>
       <div class="header">
         <div>
-          <div class="brand-title">RANGOLI TEXTILES</div>
-          <div class="tagline">Wholesale Fabrics</div>
+          <div class="brand-title">${displayBrand}</div>
+          <div class="tagline">Textile Wholesale System</div>
         </div>
-        <div style="font-size: 7pt; font-weight: 800; background: #0f172a; color: #fff; padding: 1mm 2mm; border-radius: 1mm;">
-          ORIGINAL
+        <div style="font-size: 6.5pt; font-weight: 800; background: #c2410c; color: #fff; padding: 1mm 2mm; border-radius: 1mm;">
+          KALA QR
         </div>
       </div>
 
       <div class="body">
         <div class="details">
           <div class="design-label">Design No</div>
-          <div class="design-no">${product.design_no}</div>
+          <div class="design-no">#${product.design_no}</div>
           ${product.brand ? `<div class="meta-row"><strong>Brand:</strong> ${product.brand}</div>` : ''}
           ${product.collection_name ? `<div class="meta-row"><strong>Col:</strong> ${product.collection_name}</div>` : ''}
           ${product.fabric ? `<div class="meta-row"><strong>Fabric:</strong> ${product.fabric}</div>` : ''}

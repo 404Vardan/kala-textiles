@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { QuantityStepper, EmptyState, StatusBadge } from '@/components/ui/primitives'
 import {
   clampRequestSets,
   clearOrderRequestCart,
@@ -14,13 +15,12 @@ import {
 import { submitOrderRequest } from '@/services/orderRequests'
 import { fetchPublicBusinessSettings, normalizeWhatsAppDigits } from '@/services/adminSettings'
 import { fetchPublicProduct } from '@/services/products'
+import { KalaLogo, resolveBrandName } from '@/components/common/KalaLogo'
 import type { PublicBusinessSettings, PublicProduct } from '@/types'
 import { formatCurrency } from '@/utils/formatters'
 import {
   ArrowLeft,
   ShoppingBag,
-  Plus,
-  Minus,
   Trash2,
   MessageCircle,
   Send,
@@ -124,8 +124,26 @@ export default function OrderRequestPage() {
     }
   }, [cartSummary.items, normalizedSlug, productMap])
 
-  const businessName = businessSettings?.business_name || 'Rangoli Textiles'
+  const businessName = resolveBrandName(businessSettings?.business_name)
   const normalizedWhatsapp = normalizeWhatsAppDigits(businessSettings?.whatsapp_number)
+
+  // Compute total pieces only when pcs_per_set is known for all loaded products
+  const knownPieceSummary = useMemo(() => {
+    if (cartSummary.items.length === 0) return { allKnown: false, totalPcs: 0 }
+    let totalPcs = 0
+    let allKnown = true
+
+    for (const item of cartSummary.items) {
+      const meta = productMap[item.design_no.toUpperCase()]
+      if (meta?.pcs_per_set && meta.pcs_per_set > 0) {
+        totalPcs += item.sets * meta.pcs_per_set
+      } else {
+        allKnown = false
+      }
+    }
+
+    return { allKnown, totalPcs }
+  }, [cartSummary.items, productMap])
 
   const validateCustomerFields = (): boolean => {
     setError('')
@@ -159,7 +177,9 @@ export default function OrderRequestPage() {
   const handleSendOnWhatsApp = () => {
     if (!validateCustomerFields()) return
     if (!normalizedWhatsapp) {
-      setError('WhatsApp number is not configured for this shop. Please use "Send to Shop" instead.')
+      setError(
+        'WhatsApp number is not configured for this shop. Please use "Send to Shop" instead.'
+      )
       return
     }
 
@@ -221,323 +241,361 @@ export default function OrderRequestPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white">
-      {/* Header */}
-      <header className="bg-white/80 backdrop-blur-sm border-b sticky top-0 z-20">
-        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <Link to="/" className="text-gray-500 hover:text-gray-700">
-              <ArrowLeft className="w-5 h-5" />
+    <div className="min-h-screen bg-[#f8f7f4] text-stone-900 flex flex-col justify-between">
+      {/* Page Header */}
+      <header className="bg-white border-b border-stone-200 sticky top-0 z-20">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <Link
+              to="/"
+              aria-label="Back to home"
+              className="w-9 h-9 rounded-lg border border-stone-200 flex items-center justify-center text-stone-600 hover:bg-stone-100 hover:text-stone-900 transition-colors shrink-0"
+            >
+              <ArrowLeft className="w-4 h-4" />
             </Link>
-            <div>
-              <h1 className="font-bold text-lg bg-gradient-to-r from-orange-600 to-rose-600 bg-clip-text text-transparent">
+            <KalaLogo iconOnly size="sm" />
+            <div className="min-w-0">
+              <h1 className="font-extrabold text-base sm:text-lg text-stone-900 truncate leading-tight">
                 {businessName}
               </h1>
-              <p className="text-xs text-gray-500">Review Buyer Order Request</p>
+              <p className="text-xs text-stone-500 truncate">Wholesale Order Request Review</p>
             </div>
           </div>
 
-          <Link
-            to="/"
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-orange-700 bg-orange-50 hover:bg-orange-100 px-3 py-1.5 rounded-full transition-colors"
-          >
-            <QrCode className="w-3.5 h-3.5" />
-            <span>Scan Another Design</span>
+          <Link to="/">
+            <Button variant="outline" size="sm" className="gap-1.5">
+              <QrCode className="w-3.5 h-3.5 text-orange-700" />
+              <span>Browse / Scan More</span>
+            </Button>
           </Link>
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-4 py-6 space-y-6">
+      <main className="max-w-6xl mx-auto w-full px-4 sm:px-6 py-6 sm:py-8 flex-1">
         {submittedRequestId !== null && submittedSummary ? (
-          <div className="bg-white rounded-2xl shadow-sm border p-8 text-center space-y-5">
-            <div className="w-16 h-16 rounded-full bg-green-100 text-green-600 flex items-center justify-center mx-auto">
-              <CheckCircle2 className="w-9 h-9" />
+          /* Success State */
+          <div className="max-w-xl mx-auto bg-white rounded-xl border border-stone-200 shadow-2xs p-6 sm:p-8 text-center space-y-5">
+            <div className="w-14 h-14 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center mx-auto">
+              <CheckCircle2 className="w-8 h-8" />
             </div>
 
-            <div className="space-y-1">
-              <span className="inline-block text-xs font-bold uppercase tracking-wider bg-green-50 text-green-700 border border-green-200 px-3 py-1 rounded-full">
-                Request Reference #{submittedRequestId}
-              </span>
-              <h2 className="text-2xl font-bold text-gray-900 pt-2">
-                Order Request Sent to {businessName}!
+            <div className="space-y-2">
+              <div className="flex items-center justify-center gap-2">
+                <StatusBadge status="requested" label="Order Request Received" />
+                <span className="text-xs font-mono font-bold bg-stone-100 text-stone-800 border border-stone-200 px-2.5 py-0.5 rounded-md">
+                  Ref #{submittedRequestId}
+                </span>
+              </div>
+
+              <h2 className="text-xl sm:text-2xl font-bold text-stone-900 pt-1">
+                Request Sent to {businessName}
               </h2>
-              <p className="text-sm text-gray-600 max-w-md mx-auto">
-                Thank you, <strong>{submittedSummary.partyName}</strong>. We have received your
-                request for <strong>{submittedSummary.totalDesigns}</strong>{' '}
+
+              <p className="text-sm text-stone-600 leading-relaxed max-w-md mx-auto">
+                Thank you, <strong>{submittedSummary.partyName}</strong>. Your wholesale request for{' '}
+                <strong>{submittedSummary.totalDesigns}</strong>{' '}
                 {submittedSummary.totalDesigns === 1 ? 'design' : 'designs'} (
                 <strong>{submittedSummary.totalSets}</strong>{' '}
-                {submittedSummary.totalSets === 1 ? 'set' : 'sets'}) and will contact you on{' '}
-                <strong>{submittedSummary.phone}</strong>.
+                {submittedSummary.totalSets === 1 ? 'set' : 'sets'}) has been submitted for review.
               </p>
             </div>
 
-            <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <div className="bg-stone-50 border border-stone-200/80 rounded-lg p-3.5 text-xs text-stone-600 text-left space-y-1">
+              <p className="font-semibold text-stone-800">What happens next?</p>
+              <p>
+                This is an order request. Our shop team will review design availability, prepare
+                your draft wholesale order, and contact you at{' '}
+                <strong>{submittedSummary.phone}</strong> to confirm dispatch.
+              </p>
+            </div>
+
+            <div className="pt-2">
               <Link to="/">
-                <Button className="bg-orange-600 hover:bg-orange-700 text-white gap-2">
+                <Button size="lg" className="gap-2">
                   <QrCode className="w-4 h-4" />
-                  Scan More Designs
+                  <span>Continue Browsing Designs</span>
                 </Button>
               </Link>
             </div>
           </div>
         ) : cartSummary.items.length === 0 ? (
-          <div className="bg-white rounded-2xl shadow-sm border p-8 text-center space-y-4">
-            <div className="w-16 h-16 rounded-full bg-orange-50 text-orange-400 flex items-center justify-center mx-auto">
-              <ShoppingBag className="w-8 h-8" />
-            </div>
-            <h2 className="text-xl font-bold text-gray-800">Your Order List is Empty</h2>
-            <p className="text-sm text-gray-500 max-w-sm mx-auto">
-              Scan a product QR label or open a design link to add sets to your order request list.
-            </p>
-            <div className="pt-2">
-              <Link to="/">
-                <Button className="bg-orange-600 hover:bg-orange-700 text-white gap-2">
-                  <QrCode className="w-4 h-4" />
-                  Scan Product QR
-                </Button>
-              </Link>
-            </div>
+          /* Empty State */
+          <div className="max-w-lg mx-auto bg-white rounded-xl border border-stone-200 shadow-2xs p-6 sm:p-8">
+            <EmptyState
+              icon={ShoppingBag}
+              title="Your Order List is Empty"
+              description="Scan a product QR label or open a design catalog link to add sets to your wholesale order request."
+              action={
+                <Link to="/">
+                  <Button size="lg" className="gap-2">
+                    <QrCode className="w-4 h-4" />
+                    <span>Browse or Scan Designs</span>
+                  </Button>
+                </Link>
+              }
+            />
           </div>
         ) : (
-          <>
-            {/* Selected Designs List */}
-            <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-              <div className="px-5 py-4 border-b bg-gray-50/70 flex items-center justify-between">
+          /* Two-Column Wholesale Order Checkout Layout */
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
+            {/* Left Column: Selected Design List */}
+            <div className="lg:col-span-7 bg-white rounded-xl border border-stone-200 shadow-2xs overflow-hidden">
+              <div className="px-5 py-4 border-b border-stone-200 bg-stone-50 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <ShoppingBag className="w-5 h-5 text-orange-600" />
-                  <h2 className="font-bold text-gray-900">Selected Designs</h2>
+                  <ShoppingBag className="w-4 h-4 text-orange-700" />
+                  <h2 className="font-bold text-sm sm:text-base text-stone-900">
+                    Selected Designs
+                  </h2>
                 </div>
-                <div className="text-xs font-semibold text-orange-700 bg-orange-100 px-3 py-1 rounded-full">
+                <span className="text-xs font-semibold text-stone-700 bg-white border border-stone-200 px-2.5 py-1 rounded-md tabular-nums">
                   {cartSummary.totalDesigns}{' '}
                   {cartSummary.totalDesigns === 1 ? 'Design' : 'Designs'} ·{' '}
                   {cartSummary.totalSets} {cartSummary.totalSets === 1 ? 'Set' : 'Sets'}
-                </div>
+                </span>
               </div>
 
-              <div className="divide-y">
+              <div className="divide-y divide-stone-100">
                 {cartSummary.items.map((item) => {
                   const meta = productMap[item.design_no.toUpperCase()]
                   const thumb = meta?.media?.[0]?.media_url || meta?.image_url
-                  const pcsPerSet = meta?.pcs_per_set && meta.pcs_per_set > 0 ? meta.pcs_per_set : null
+                  const pcsPerSet =
+                    meta?.pcs_per_set && meta.pcs_per_set > 0 ? meta.pcs_per_set : null
 
                   return (
                     <div
                       key={item.design_no}
-                      className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                      className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-stone-50/50 transition-colors"
                     >
-                      <div className="flex items-center gap-3.5">
+                      <div className="flex items-center gap-3.5 min-w-0">
                         {thumb ? (
                           <Link
                             to={`/${normalizedSlug}/p/${encodeURIComponent(item.design_no)}`}
-                            className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 border shrink-0"
+                            className="w-16 h-16 rounded-lg overflow-hidden bg-stone-100 border border-stone-200 shrink-0"
                           >
                             <img
                               src={thumb}
-                              alt={item.design_no}
+                              alt={`Design ${item.design_no}`}
                               className="w-full h-full object-cover"
                             />
                           </Link>
                         ) : (
                           <Link
                             to={`/${normalizedSlug}/p/${encodeURIComponent(item.design_no)}`}
-                            className="w-16 h-16 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-orange-600 font-bold text-xs shrink-0"
+                            className="w-16 h-16 rounded-lg bg-orange-50 border border-orange-200 flex flex-col items-center justify-center text-orange-800 shrink-0 px-1"
                           >
-                            {item.design_no}
+                            <span className="text-[10px] uppercase font-semibold text-orange-600">
+                              Design
+                            </span>
+                            <span className="font-bold text-xs truncate max-w-full">
+                              {item.design_no}
+                            </span>
                           </Link>
                         )}
 
-                        <div className="space-y-0.5">
+                        <div className="space-y-1 min-w-0">
                           <Link
                             to={`/${normalizedSlug}/p/${encodeURIComponent(item.design_no)}`}
-                            className="font-bold text-lg text-gray-900 hover:text-orange-600 transition-colors"
+                            className="font-bold text-base sm:text-lg text-stone-900 hover:text-orange-700 transition-colors block truncate"
                           >
                             Design {item.design_no}
                           </Link>
-                          <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                            {meta?.brand && <span>{meta.brand}</span>}
+
+                          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-stone-500">
+                            {meta?.brand && (
+                              <span className="font-medium text-stone-700">{meta.brand}</span>
+                            )}
+                            {meta?.fabric && <span>• {meta.fabric}</span>}
                             {pcsPerSet && (
-                              <span>
+                              <span className="tabular-nums">
                                 • {pcsPerSet} pcs/set ({item.sets * pcsPerSet} pcs)
                               </span>
                             )}
-                            {meta?.rate && <span>• {formatCurrency(meta.rate)}/pc</span>}
+                            {meta?.rate && (
+                              <span className="font-semibold text-stone-700 tabular-nums">
+                                • {formatCurrency(meta.rate)}/pc
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between sm:justify-end gap-3">
-                        {/* Set quantity stepper */}
-                        <div className="inline-flex items-center border rounded-xl bg-gray-50 p-1">
-                          <button
-                            type="button"
-                            onClick={() =>
+                      <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-stone-100">
+                        <span className="text-xs font-medium text-stone-500 sm:hidden">
+                          Quantity (Sets)
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <QuantityStepper
+                            value={item.sets}
+                            onChange={(nextSets) =>
                               updateOrderRequestCartItemSets(
                                 normalizedSlug,
                                 item.design_no,
-                                clampRequestSets(item.sets - 1)
+                                clampRequestSets(nextSets)
                               )
                             }
-                            disabled={item.sets <= 1 || submitting}
-                            className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-700 hover:bg-white disabled:opacity-40"
-                            aria-label="Decrease sets"
-                          >
-                            <Minus className="w-3.5 h-3.5" />
-                          </button>
-                          <input
-                            type="number"
                             min={1}
                             max={500}
-                            value={item.sets}
-                            onChange={(e) => {
-                              const val = parseInt(e.target.value, 10)
-                              if (!Number.isNaN(val)) {
-                                updateOrderRequestCartItemSets(
-                                  normalizedSlug,
-                                  item.design_no,
-                                  clampRequestSets(val)
-                                )
-                              }
-                            }}
+                            size="sm"
                             disabled={submitting}
-                            className="w-12 text-center font-bold text-sm bg-transparent focus:outline-none"
+                            ariaLabel={`Set quantity for Design ${item.design_no}`}
                           />
+
                           <button
                             type="button"
                             onClick={() =>
-                              updateOrderRequestCartItemSets(
-                                normalizedSlug,
-                                item.design_no,
-                                clampRequestSets(item.sets + 1)
-                              )
+                              removeFromOrderRequestCart(normalizedSlug, item.design_no)
                             }
-                            disabled={item.sets >= 500 || submitting}
-                            className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-700 hover:bg-white disabled:opacity-40"
-                            aria-label="Increase sets"
+                            disabled={submitting}
+                            className="w-8 h-8 flex items-center justify-center text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors cursor-pointer"
+                            aria-label={`Remove design ${item.design_no} from order list`}
                           >
-                            <Plus className="w-3.5 h-3.5" />
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
-
-                        <button
-                          type="button"
-                          onClick={() => removeFromOrderRequestCart(normalizedSlug, item.design_no)}
-                          disabled={submitting}
-                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                          aria-label={`Remove design ${item.design_no}`}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
                       </div>
                     </div>
                   )
                 })}
               </div>
-
-              <div className="px-5 py-3.5 bg-orange-50/60 border-t flex items-center justify-between text-sm">
-                <span className="font-medium text-gray-700">Total Order Summary</span>
-                <span className="font-bold text-orange-800">
-                  {cartSummary.totalDesigns}{' '}
-                  {cartSummary.totalDesigns === 1 ? 'Design' : 'Designs'} ·{' '}
-                  {cartSummary.totalSets} {cartSummary.totalSets === 1 ? 'Set' : 'Sets'}
-                </span>
-              </div>
             </div>
 
-            {/* Customer Details & Submission Actions */}
-            <form
-              onSubmit={handleSendToShop}
-              className="bg-white rounded-2xl shadow-sm border p-5 sm:p-6 space-y-5"
-            >
-              <div>
-                <h3 className="font-bold text-lg text-gray-900">Your Contact Details</h3>
-                <p className="text-xs text-gray-500">
-                  Required so the shop can confirm availability and prepare your order.
-                </p>
-              </div>
+            {/* Right Column: Order Summary + Customer Info + Submission Actions */}
+            <div className="lg:col-span-5 space-y-5">
+              {/* Order Summary Card */}
+              <div className="bg-white rounded-xl border border-stone-200 shadow-2xs p-5 space-y-3">
+                <h3 className="font-bold text-sm uppercase tracking-wider text-stone-600">
+                  Order Request Summary
+                </h3>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="buyer-name">Your Name / Firm Name *</Label>
-                  <Input
-                    id="buyer-name"
-                    value={partyName}
-                    onChange={(e) => setPartyName(e.target.value)}
-                    placeholder="e.g. Shree Ganesh Textiles"
-                    maxLength={120}
-                    required
-                    disabled={submitting}
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="buyer-phone">Phone / WhatsApp Number *</Label>
-                  <Input
-                    id="buyer-phone"
-                    type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="+91 98765 43210"
-                    maxLength={20}
-                    required
-                    disabled={submitting}
-                  />
+                <div className="divide-y divide-stone-100 text-sm">
+                  <div className="py-2 flex items-center justify-between">
+                    <span className="text-stone-600">Selected Designs</span>
+                    <strong className="font-bold text-stone-900 tabular-nums">
+                      {cartSummary.totalDesigns}
+                    </strong>
+                  </div>
+                  <div className="py-2 flex items-center justify-between">
+                    <span className="text-stone-600">Total Requested Sets</span>
+                    <strong className="font-bold text-orange-700 text-base tabular-nums">
+                      {cartSummary.totalSets} {cartSummary.totalSets === 1 ? 'Set' : 'Sets'}
+                    </strong>
+                  </div>
+                  {knownPieceSummary.allKnown && knownPieceSummary.totalPcs > 0 && (
+                    <div className="py-2 flex items-center justify-between">
+                      <span className="text-stone-600">Total Pieces</span>
+                      <strong className="font-semibold text-stone-800 tabular-nums">
+                        {knownPieceSummary.totalPcs} Pcs
+                      </strong>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="buyer-note">Note (Optional)</Label>
-                <Input
-                  id="buyer-note"
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  placeholder="Transport preference, station, or special instructions..."
-                  maxLength={1000}
-                  disabled={submitting}
-                />
-              </div>
-
-              {error && (
-                <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 text-red-700 p-3.5 rounded-xl text-sm">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>{error}</span>
+              {/* Customer Information & Submission Form */}
+              <form
+                onSubmit={handleSendToShop}
+                className="bg-white rounded-xl border border-stone-200 shadow-2xs p-5 sm:p-6 space-y-4"
+              >
+                <div className="border-b border-stone-100 pb-3">
+                  <h3 className="font-bold text-base text-stone-900">Buyer Information</h3>
+                  <p className="text-xs text-stone-500 mt-0.5">
+                    Enter your party details so the shop can review and confirm your request.
+                  </p>
                 </div>
-              )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                {/* Action 1: Send on WhatsApp */}
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleSendOnWhatsApp}
-                  disabled={submitting || loadingSettings || !normalizedWhatsapp}
-                  className="h-12 border-emerald-600 text-emerald-700 hover:bg-emerald-50 font-semibold rounded-xl gap-2"
-                >
-                  <MessageCircle className="w-5 h-5" />
-                  <span>Send on WhatsApp</span>
-                </Button>
+                <div className="space-y-3.5">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="buyer-name">Customer / Firm Name *</Label>
+                    <Input
+                      id="buyer-name"
+                      value={partyName}
+                      onChange={(e) => setPartyName(e.target.value)}
+                      placeholder="e.g. Shree Ganesh Textiles"
+                      maxLength={120}
+                      required
+                      disabled={submitting}
+                    />
+                  </div>
 
-                {/* Action 2: Send to Shop */}
-                <Button
-                  type="submit"
-                  disabled={submitting || !partyName.trim() || !phone.trim()}
-                  className="h-12 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-xl gap-2"
-                >
-                  <Send className="w-4 h-4" />
-                  <span>{submitting ? 'Sending to Shop...' : 'Send to Shop'}</span>
-                </Button>
-              </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="buyer-phone">Phone / WhatsApp Number *</Label>
+                    <Input
+                      id="buyer-phone"
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="+91 98765 43210"
+                      maxLength={20}
+                      required
+                      disabled={submitting}
+                    />
+                  </div>
 
-              {!loadingSettings && !normalizedWhatsapp && (
-                <p className="text-xs text-gray-500 text-center">
-                  Direct WhatsApp sharing is not configured for this shop yet — please click{' '}
-                  <strong>Send to Shop</strong> to submit your order request directly.
-                </p>
-              )}
-            </form>
-          </>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="buyer-note">Order Note (Optional)</Label>
+                    <Input
+                      id="buyer-note"
+                      value={note}
+                      onChange={(e) => setNote(e.target.value)}
+                      placeholder="Station, transport preference, or special instructions..."
+                      maxLength={1000}
+                      disabled={submitting}
+                    />
+                  </div>
+                </div>
+
+                {error && (
+                  <div
+                    role="alert"
+                    className="flex items-start gap-2.5 bg-red-50 border border-red-200 text-red-800 p-3 rounded-lg text-xs sm:text-sm font-medium"
+                  >
+                    <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                    <span>{error}</span>
+                  </div>
+                )}
+
+                <div className="space-y-2.5 pt-2">
+                  {/* Primary Action: Send to Shop */}
+                  <Button
+                    type="submit"
+                    size="lg"
+                    disabled={submitting || !partyName.trim() || !phone.trim()}
+                    className="w-full h-11 bg-orange-700 hover:bg-orange-800 text-white font-bold rounded-lg gap-2"
+                  >
+                    <Send className="w-4 h-4" />
+                    <span>{submitting ? 'Submitting Request...' : 'Send to Shop'}</span>
+                  </Button>
+
+                  {/* Secondary Action: Send on WhatsApp */}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="lg"
+                    onClick={handleSendOnWhatsApp}
+                    disabled={submitting || loadingSettings || !normalizedWhatsapp}
+                    className="w-full h-11 border-emerald-700 bg-emerald-50/60 text-emerald-900 hover:bg-emerald-100/80 font-bold rounded-lg gap-2"
+                  >
+                    <MessageCircle className="w-4 h-4 text-emerald-700" />
+                    <span>Send on WhatsApp</span>
+                  </Button>
+                </div>
+
+                {!loadingSettings && !normalizedWhatsapp && (
+                  <p className="text-xs text-stone-500 text-center">
+                    WhatsApp contact is not configured for this business — use{' '}
+                    <strong>Send to Shop</strong> to submit your request directly.
+                  </p>
+                )}
+              </form>
+            </div>
+          </div>
         )}
       </main>
+
+      {/* Footer */}
+      <footer className="border-t border-stone-200 bg-white text-center py-4 px-4 text-xs text-stone-500 mt-8">
+        © {new Date().getFullYear()} {businessName} • Textile Wholesale Management System
+      </footer>
     </div>
   )
 }
-

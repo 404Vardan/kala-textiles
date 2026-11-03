@@ -53,7 +53,7 @@ export async function fetchPublicBusinessSettings(slug: string = 'rangoli'): Pro
   const validWhatsapp = sanitizeConfiguredWhatsapp(payload.whatsapp_number)
 
   return {
-    business_name: payload.business_name || 'Rangoli Textiles',
+    business_name: payload.business_name || 'Kala',
     business_slug: payload.business_slug || cleanSlug,
     whatsapp_number: validWhatsapp || null,
   }
