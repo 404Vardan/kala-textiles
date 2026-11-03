@@ -64,15 +64,14 @@ export async function fetchPublicOrder(slug: string = 'rangoli', orderNo: string
 }
 
 export async function generateOrderNo(): Promise<string> {
-  try {
-    const { data, error } = await supabase.rpc('generate_order_no')
-    if (!error && data) return data as string
-  } catch {}
-
-  // Fallback client generation
-  const year = new Date().getFullYear()
-  const randomSeq = Math.floor(1000 + Math.random() * 9000)
-  return `RNG-${year}-${randomSeq}`
+  const { data, error } = await supabase.rpc('generate_order_no')
+  if (error) {
+    throw new Error(error.message || 'Failed to generate order number')
+  }
+  if (!data) {
+    throw new Error('Order number generator returned an empty value')
+  }
+  return data as string
 }
 
 export async function createOrder(order: Omit<Order, 'id' | 'created_at' | 'updated_at'>): Promise<Order> {

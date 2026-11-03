@@ -209,15 +209,39 @@ export interface StockMovement {
   id: number
   business_id?: number
   product_id: number
-  from_location_id?: number
-  to_location_id?: number
+  from_location_id?: number | null
+  to_location_id?: number | null
   sets: number
   total_pcs: number
-  notes?: string
-  reference_no?: string
-  staff_name?: string
+  notes?: string | null
+  reference_no?: string | null
+  staff_name?: string | null
   movement_type?: MovementType
   created_at: string
+}
+
+export interface IntakeStockResult {
+  success: boolean
+  product_id: number
+  location_id: number
+  pcs_per_set: number
+  sets: number
+  total_pcs: number
+  reference_no: string
+}
+
+export interface TransferStockResult {
+  success: boolean
+  reference_no: string
+  pcs_per_set: number
+  transferred_sets: number
+  transferred_pcs: number
+}
+
+export interface ConfirmOrderResult {
+  success: boolean
+  order_no: string
+  status: OrderStatus
 }
 
 // Party & Agent Directory Types

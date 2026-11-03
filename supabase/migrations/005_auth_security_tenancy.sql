@@ -155,6 +155,26 @@ BEGIN
       v_table
     );
   END LOOP;
+
+  -- Deduplicate admin_settings per business_id (if multiple rows exist) and ensure default row exists
+  DELETE FROM public.admin_settings a
+  USING public.admin_settings b
+  WHERE a.business_id = b.business_id
+    AND a.id > b.id;
+
+  IF NOT EXISTS (SELECT 1 FROM public.admin_settings WHERE business_id = v_business_id) THEN
+    INSERT INTO public.admin_settings (business_id, whatsapp_number, password_hash)
+    VALUES (v_business_id, '+91XXXXXXXXXX', 'migrated')
+    ON CONFLICT DO NOTHING;
+  END IF;
+EXCEPTION
+  WHEN undefined_column THEN
+    -- password_hash already dropped on re-run
+    IF NOT EXISTS (SELECT 1 FROM public.admin_settings WHERE business_id = v_business_id) THEN
+      INSERT INTO public.admin_settings (business_id, whatsapp_number)
+      VALUES (v_business_id, '+91XXXXXXXXXX')
+      ON CONFLICT DO NOTHING;
+    END IF;
 END $$;
 
 -- --------------------------------------------------------------------
@@ -192,9 +212,23 @@ ALTER TABLE public.invoices DROP CONSTRAINT IF EXISTS invoices_invoice_no_key;
 DROP INDEX IF EXISTS public.uq_invoices_business_invoice_no;
 CREATE UNIQUE INDEX uq_invoices_business_invoice_no ON public.invoices (business_id, invoice_no);
 
--- Inventory Stock (business_id, product_id, location_id)
+-- Inventory Stock: replace legacy (product_id, location_id) constraint with tenant-scoped (business_id, product_id, location_id)
+ALTER TABLE public.inventory_stock DROP CONSTRAINT IF EXISTS inventory_stock_product_id_location_id_key;
 DROP INDEX IF EXISTS public.uq_inventory_stock_business_prod_loc;
-CREATE UNIQUE INDEX uq_inventory_stock_business_prod_loc ON public.inventory_stock (business_id, product_id, location_id);
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'inventory_stock_business_product_location_key') THEN
+    ALTER TABLE public.inventory_stock
+      ADD CONSTRAINT inventory_stock_business_product_location_key
+      UNIQUE (business_id, product_id, location_id);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'admin_settings_business_id_key') THEN
+    ALTER TABLE public.admin_settings
+      ADD CONSTRAINT admin_settings_business_id_key
+      UNIQUE (business_id);
+  END IF;
+END $$;
 
 -- 2. Composite Unique Constraints on Parent Tables (Required for Composite FKs)
 DO $$
@@ -309,6 +343,109 @@ BEGIN
       ON DELETE RESTRICT;
   END IF;
 END $$;
+
+-- 4. Order Items Quantity Consistency Constraint & Mutation Guard Trigger
+-- Normalize any historical order_items rows before adding check constraint
+UPDATE public.order_items oi
+SET pcs_per_set = GREATEST(COALESCE(p.pcs_per_set, oi.pcs_per_set, 1), 1),
+    sets = GREATEST(COALESCE(oi.sets, 1), 1),
+    total_pcs = GREATEST(COALESCE(oi.sets, 1), 1) * GREATEST(COALESCE(p.pcs_per_set, oi.pcs_per_set, 1), 1),
+    rate = GREATEST(COALESCE(oi.rate, 0), 0),
+    line_total = GREATEST(COALESCE(oi.line_total, 0), 0)
+FROM public.products p
+WHERE oi.product_id = p.id;
+
+UPDATE public.order_items
+SET pcs_per_set = GREATEST(COALESCE(pcs_per_set, 1), 1),
+    sets = GREATEST(COALESCE(sets, 1), 1),
+    total_pcs = GREATEST(COALESCE(sets, 1), 1) * GREATEST(COALESCE(pcs_per_set, 1), 1),
+    rate = GREATEST(COALESCE(rate, 0), 0),
+    line_total = GREATEST(COALESCE(line_total, 0), 0)
+WHERE product_id IS NULL
+   OR sets IS NULL OR sets <= 0
+   OR pcs_per_set IS NULL OR pcs_per_set <= 0
+   OR total_pcs IS DISTINCT FROM (sets * pcs_per_set);
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'check_order_items_quantities') THEN
+    ALTER TABLE public.order_items
+      ADD CONSTRAINT check_order_items_quantities
+      CHECK (
+        sets > 0
+        AND pcs_per_set > 0
+        AND total_pcs = sets * pcs_per_set
+        AND COALESCE(rate, 0) >= 0
+        AND COALESCE(line_total, 0) >= 0
+      );
+  END IF;
+END $$;
+
+CREATE OR REPLACE FUNCTION public.guard_and_sync_order_items()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_order public.orders%ROWTYPE;
+  v_prod_biz BIGINT;
+  v_prod_pcs INT;
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    SELECT * INTO v_order FROM public.orders WHERE id = OLD.order_id FOR UPDATE;
+    IF FOUND AND COALESCE(v_order.status, 'draft') <> 'draft' THEN
+      RAISE EXCEPTION 'Cannot delete items from a non-draft order (%)', v_order.order_no;
+    END IF;
+    RETURN OLD;
+  END IF;
+
+  -- Lock parent order to serialize item changes against order confirmation
+  SELECT * INTO v_order FROM public.orders WHERE id = NEW.order_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Parent order % not found', NEW.order_id;
+  END IF;
+
+  IF COALESCE(v_order.status, 'draft') <> 'draft' THEN
+    RAISE EXCEPTION 'Cannot add or modify items on a non-draft order (%)', v_order.order_no;
+  END IF;
+
+  -- Enforce tenant alignment with parent order
+  NEW.business_id := v_order.business_id;
+
+  IF NEW.sets IS NULL OR NEW.sets <= 0 THEN
+    RAISE EXCEPTION 'Order item sets must be greater than zero';
+  END IF;
+
+  -- Derive pcs_per_set and total_pcs from authoritative product record when linked
+  IF NEW.product_id IS NOT NULL THEN
+    SELECT business_id, GREATEST(COALESCE(pcs_per_set, 1), 1)
+    INTO v_prod_biz, v_prod_pcs
+    FROM public.products
+    WHERE id = NEW.product_id;
+
+    IF v_prod_biz IS NULL OR v_prod_biz <> v_order.business_id THEN
+      RAISE EXCEPTION 'Product % does not belong to order business', NEW.product_id;
+    END IF;
+
+    NEW.pcs_per_set := v_prod_pcs;
+  ELSE
+    NEW.pcs_per_set := GREATEST(COALESCE(NEW.pcs_per_set, 1), 1);
+  END IF;
+
+  NEW.total_pcs := NEW.sets * NEW.pcs_per_set;
+  NEW.rate := GREATEST(COALESCE(NEW.rate, 0), 0);
+  NEW.line_total := ROUND((NEW.total_pcs * NEW.rate)::NUMERIC, 2);
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_guard_and_sync_order_items ON public.order_items;
+CREATE TRIGGER trg_guard_and_sync_order_items
+  BEFORE INSERT OR UPDATE OR DELETE ON public.order_items
+  FOR EACH ROW
+  EXECUTE FUNCTION public.guard_and_sync_order_items();
 
 -- --------------------------------------------------------------------
 -- SECTION D: Membership Helper Functions
@@ -601,11 +738,55 @@ CREATE POLICY "owners_delete_orders" ON public.orders
   FOR DELETE TO authenticated
   USING (public.is_business_owner(business_id));
 
--- Order Items Policies
-CREATE POLICY "members_manage_order_items" ON public.order_items
-  FOR ALL TO authenticated
-  USING (public.is_business_member(business_id))
-  WITH CHECK (public.is_business_member(business_id));
+-- Order Items Policies (mutations restricted to draft parent orders)
+CREATE POLICY "members_select_order_items" ON public.order_items
+  FOR SELECT TO authenticated
+  USING (public.is_business_member(business_id));
+
+CREATE POLICY "members_insert_order_items" ON public.order_items
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    public.is_business_member(business_id)
+    AND EXISTS (
+      SELECT 1 FROM public.orders o
+      WHERE o.id = order_id
+        AND o.business_id = order_items.business_id
+        AND COALESCE(o.status, 'draft') = 'draft'
+    )
+  );
+
+CREATE POLICY "members_update_order_items" ON public.order_items
+  FOR UPDATE TO authenticated
+  USING (
+    public.is_business_member(business_id)
+    AND EXISTS (
+      SELECT 1 FROM public.orders o
+      WHERE o.id = order_id
+        AND o.business_id = order_items.business_id
+        AND COALESCE(o.status, 'draft') = 'draft'
+    )
+  )
+  WITH CHECK (
+    public.is_business_member(business_id)
+    AND EXISTS (
+      SELECT 1 FROM public.orders o
+      WHERE o.id = order_id
+        AND o.business_id = order_items.business_id
+        AND COALESCE(o.status, 'draft') = 'draft'
+    )
+  );
+
+CREATE POLICY "members_delete_order_items" ON public.order_items
+  FOR DELETE TO authenticated
+  USING (
+    public.is_business_member(business_id)
+    AND EXISTS (
+      SELECT 1 FROM public.orders o
+      WHERE o.id = order_id
+        AND o.business_id = order_items.business_id
+        AND COALESCE(o.status, 'draft') = 'draft'
+    )
+  );
 
 -- Parties Policies
 CREATE POLICY "members_manage_parties" ON public.parties
@@ -762,7 +943,8 @@ BEGIN
   SELECT business_id, GREATEST(COALESCE(pcs_per_set, 1), 1)
   INTO v_business_id, v_pcs_per_set
   FROM public.products
-  WHERE id = p_product_id;
+  WHERE id = p_product_id
+  FOR SHARE;
 
   IF v_business_id IS NULL THEN
     RAISE EXCEPTION 'Product not found';
@@ -786,10 +968,10 @@ BEGIN
   v_total_pcs := p_sets * v_pcs_per_set;
   v_ref := COALESCE(NULLIF(TRIM(p_ref_no), ''), 'IN-' || TO_CHAR(NOW(), 'YYYYMMDD-HH24MISS'));
 
-  -- 4. Upsert stock
+  -- 4. Upsert stock on tenant-scoped conflict target (business_id, product_id, location_id)
   INSERT INTO public.inventory_stock (business_id, product_id, location_id, sets, total_pcs, updated_at)
   VALUES (v_business_id, p_product_id, p_location_id, p_sets, v_total_pcs, NOW())
-  ON CONFLICT (product_id, location_id)
+  ON CONFLICT (business_id, product_id, location_id)
   DO UPDATE SET
     sets = inventory_stock.sets + EXCLUDED.sets,
     total_pcs = inventory_stock.total_pcs + EXCLUDED.total_pcs,
@@ -899,7 +1081,8 @@ BEGIN
   SELECT business_id, GREATEST(COALESCE(pcs_per_set, 1), 1)
   INTO v_business_id, v_pcs_per_set
   FROM public.products
-  WHERE id = p_product_id;
+  WHERE id = p_product_id
+  FOR SHARE;
 
   IF v_business_id IS NULL THEN
     RAISE EXCEPTION 'Product not found';
@@ -921,7 +1104,7 @@ BEGIN
   v_total_pcs := p_sets * v_pcs_per_set;
   v_ref := COALESCE(NULLIF(TRIM(p_ref_no), ''), 'TR-' || TO_CHAR(NOW(), 'YYYYMMDD-HH24MISS'));
 
-  -- Lock source row in deterministic location order
+  -- Lock source row
   SELECT sets, total_pcs INTO v_current_sets, v_current_pcs
   FROM public.inventory_stock
   WHERE business_id = v_business_id
@@ -946,10 +1129,10 @@ BEGIN
     AND product_id = p_product_id
     AND location_id = p_from_location_id;
 
-  -- Update destination
+  -- Update destination on tenant-scoped conflict target (business_id, product_id, location_id)
   INSERT INTO public.inventory_stock (business_id, product_id, location_id, sets, total_pcs, updated_at)
   VALUES (v_business_id, p_product_id, p_to_location_id, p_sets, v_total_pcs, NOW())
-  ON CONFLICT (product_id, location_id)
+  ON CONFLICT (business_id, product_id, location_id)
   DO UPDATE SET
     sets = inventory_stock.sets + EXCLUDED.sets,
     total_pcs = inventory_stock.total_pcs + EXCLUDED.total_pcs,
@@ -1036,6 +1219,7 @@ DECLARE
   v_order public.orders%ROWTYPE;
   v_business_id BIGINT;
   v_loc_biz BIGINT;
+  v_item_count INT;
   v_agg RECORD;
   v_item RECORD;
   v_avail_sets INT;
@@ -1043,6 +1227,7 @@ DECLARE
   v_item_pcs INT;
   v_loc_name TEXT;
 BEGIN
+  -- 1. Lock the parent order row
   SELECT * INTO v_order FROM public.orders WHERE id = p_order_id FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Order not found';
@@ -1058,6 +1243,7 @@ BEGIN
     RAISE EXCEPTION 'Order % cannot be confirmed (current status: %)', v_order.order_no, v_order.status;
   END IF;
 
+  -- 2. Validate location belongs to the same business
   SELECT name, business_id INTO v_loc_name, v_loc_biz
   FROM public.inventory_locations
   WHERE id = p_location_id;
@@ -1066,20 +1252,62 @@ BEGIN
     RAISE EXCEPTION 'Selected inventory location is not valid for this business';
   END IF;
 
-  -- Validate order items exist and have valid positive quantities and product links
-  IF NOT EXISTS (SELECT 1 FROM public.order_items WHERE order_id = p_order_id) THEN
+  -- 3. Explicitly lock all order_items for this order in deterministic id order
+  PERFORM 1
+  FROM public.order_items oi
+  WHERE oi.order_id = p_order_id
+  ORDER BY oi.id ASC
+  FOR UPDATE;
+
+  SELECT COUNT(*) INTO v_item_count
+  FROM public.order_items
+  WHERE order_id = p_order_id;
+
+  IF COALESCE(v_item_count, 0) = 0 THEN
     RAISE EXCEPTION 'Order % has no items to confirm', v_order.order_no;
   END IF;
 
+  -- 4. Validate order_items integrity (business_id, product_id, sets)
   IF EXISTS (
     SELECT 1 FROM public.order_items
     WHERE order_id = p_order_id
-      AND (product_id IS NULL OR sets IS NULL OR sets <= 0)
+      AND (
+        business_id <> v_business_id
+        OR product_id IS NULL
+        OR sets IS NULL
+        OR sets <= 0
+      )
   ) THEN
-    RAISE EXCEPTION 'Order % contains invalid items (every item must reference a valid product and have sets > 0)', v_order.order_no;
+    RAISE EXCEPTION 'Order % contains invalid items (every item must belong to the order business, reference a valid product, and have sets > 0)', v_order.order_no;
   END IF;
 
-  -- Aggregate total sets & server-derived pieces required per product (prevents duplicate row bypass)
+  -- 5. Lock referenced product rows in deterministic id order to prevent concurrent pcs_per_set changes
+  PERFORM 1
+  FROM public.products p
+  WHERE p.id IN (
+    SELECT oi.product_id
+    FROM public.order_items oi
+    WHERE oi.order_id = p_order_id
+  )
+  ORDER BY p.id ASC
+  FOR SHARE;
+
+  -- 6. Validate quantity consistency between order_items and authoritative product records
+  IF EXISTS (
+    SELECT 1
+    FROM public.order_items oi
+    LEFT JOIN public.products p ON p.id = oi.product_id AND p.business_id = v_business_id
+    WHERE oi.order_id = p_order_id
+      AND (
+        p.id IS NULL
+        OR oi.pcs_per_set <> GREATEST(COALESCE(p.pcs_per_set, 1), 1)
+        OR oi.total_pcs <> oi.sets * GREATEST(COALESCE(p.pcs_per_set, 1), 1)
+      )
+  ) THEN
+    RAISE EXCEPTION 'Order % item quantities are out of sync with product piece-per-set definitions', v_order.order_no;
+  END IF;
+
+  -- 7. Aggregate total sets & server-derived pieces required per product and lock stock rows in product_id order
   FOR v_agg IN (
     SELECT
       oi.product_id,
@@ -1094,10 +1322,6 @@ BEGIN
     GROUP BY oi.product_id, p.business_id, p.pcs_per_set
     ORDER BY oi.product_id ASC
   ) LOOP
-    IF v_agg.prod_business_id <> v_business_id THEN
-      RAISE EXCEPTION 'Product % does not belong to order business', v_agg.product_id;
-    END IF;
-
     SELECT sets, total_pcs INTO v_avail_sets, v_avail_pcs
     FROM public.inventory_stock
     WHERE business_id = v_business_id
@@ -1116,7 +1340,7 @@ BEGIN
     END IF;
   END LOOP;
 
-  -- Deduct inventory using authoritative product pcs_per_set and log movements
+  -- 8. Deduct inventory using authoritative product pcs_per_set and log movements
   FOR v_item IN (
     SELECT
       oi.id,
@@ -1137,12 +1361,6 @@ BEGIN
     WHERE business_id = v_business_id
       AND product_id = v_item.product_id
       AND location_id = p_location_id;
-
-    -- Keep order_items pcs_per_set and total_pcs synchronized with authoritative product record
-    UPDATE public.order_items
-    SET pcs_per_set = v_item.prod_pcs_per_set,
-        total_pcs = v_item_pcs
-    WHERE id = v_item.id;
 
     INSERT INTO public.stock_movements (
       business_id,
@@ -1171,7 +1389,7 @@ BEGIN
     );
   END LOOP;
 
-  -- Confirm order
+  -- 9. Mark order confirmed
   UPDATE public.orders
   SET status = 'confirmed',
       confirmed_at = NOW(),
@@ -1504,6 +1722,7 @@ $$;
 -- --------------------------------------------------------------------
 
 -- Revoke default PUBLIC and anon execution from all private/helper functions
+REVOKE ALL ON FUNCTION public.guard_and_sync_order_items() FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.is_business_member(BIGINT) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.is_business_owner(BIGINT) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.current_business_id() FROM PUBLIC, anon;
@@ -1516,6 +1735,7 @@ REVOKE ALL ON FUNCTION public.confirm_order_and_deduct_stock_tx(BIGINT, BIGINT, 
 REVOKE ALL ON FUNCTION public.get_dashboard_summary() FROM PUBLIC, anon;
 
 -- Grant execution on private/helper functions strictly to authenticated users
+GRANT EXECUTE ON FUNCTION public.guard_and_sync_order_items() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.is_business_member(BIGINT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.is_business_owner(BIGINT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.current_business_id() TO authenticated;
