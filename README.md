@@ -216,6 +216,10 @@ The PostgreSQL schema evolves through sequential migrations in [`supabase/migrat
 4. [`004_rangoli_core_system.sql`](supabase/migrations/004_rangoli_core_system.sql) — Core locations (`Godown`, `Shop`), `inventory_stock`, `stock_movements`, `parties`, `agents`, and order item triggers.
 5. [`005_auth_security_tenancy.sql`](supabase/migrations/005_auth_security_tenancy.sql) — Full multi-tenant architecture (`businesses`, `memberships`), removal of legacy permissive policies, composite tenant-aware foreign keys, strict RLS policies, and transactional inventory/order RPCs.
 6. [`006_order_requests.sql`](supabase/migrations/006_order_requests.sql) — `order_requests` and `order_request_items` tables, column-level privilege hardening, `submit_order_request`, `convert_order_request`, `reject_order_request`, `get_public_business_settings`, and `update_business_whatsapp_number`.
+7. [`007_signup_create_business.sql`](supabase/migrations/007_signup_create_business.sql) — Self-service onboarding (`check_slug_available`, `create_business`) with reserved slug protection and default `GODOWN`/`SHOP` locations.
+8. [`008_team_management.sql`](supabase/migrations/008_team_management.sql) — Owner-only team management RPCs and last-owner protection trigger on `memberships`.
+9. [`009_storage_tenant_policies.sql`](supabase/migrations/009_storage_tenant_policies.sql) — Tenant-scoped `storage.objects` policies for `product-media` (`{business_id}/{product_id}/{uuid}.{ext}`).
+10. [`010_public_rpc_rate_limits.sql`](supabase/migrations/010_public_rpc_rate_limits.sql) — `public_request_log` table, hourly per-business/per-phone rate caps, and strict input validation on `submit_order_request` and `create_public_inquiry`.
 
 ### Core Security Invariants
 
@@ -369,20 +373,47 @@ VITE_PUBLISHED_DOMAIN=https://your-domain.vercel.app
    - `004_rangoli_core_system.sql`
    - `005_auth_security_tenancy.sql`
    - `006_order_requests.sql`
+   - `007_signup_create_business.sql`
+   - `008_team_management.sql`
+   - `009_storage_tenant_policies.sql`
+   - `010_public_rpc_rate_limits.sql`
 
 2. **Configure Storage Bucket:**
-   Ensure the public storage bucket `product-media` exists in **Supabase Storage** (created/configured by migration `005_auth_security_tenancy.sql` for authenticated member uploads and public read access).
+   Migration `009_storage_tenant_policies.sql` ensures the public `product-media` bucket exists and installs tenant-scoped `storage.objects` policies enforcing the `{business_id}/{product_id}/{uuid}.{ext}` upload path (authenticated members can insert/update/delete only within their own business folder; public read remains enabled).
 
 3. **Provision Owner & Staff Accounts:**
    - Create users in **Supabase Authentication → Users**.
    - Link each user's `auth.users.id` to your business in `public.memberships` with role `'owner'` or `'staff'`:
 
    ```sql
-   INSERT INTO public.memberships (user_id, business_id, role, is_active)
-   SELECT '<AUTH_USER_UUID>', id, 'owner', true
+   INSERT INTO public.memberships (user_id, business_id, role)
+   SELECT '<AUTH_USER_UUID>', id, 'owner'
    FROM public.businesses
    WHERE slug = 'rangoli';
    ```
+
+---
+
+### Running Multi-Tenant Isolation & Security Tests
+
+[`supabase/tests/isolation.sql`](supabase/tests/isolation.sql) creates two isolated businesses and three test users (`Owner A`, `Staff A`, `Owner B`) inside a single rolled-back transaction and verifies:
+
+- **Cross-tenant isolation:** User A cannot `SELECT`, `INSERT`, `UPDATE`, or `DELETE` any row belonging to Business B in any table.
+- **Staff RBAC:** Staff cannot delete products or orders, read `admin_settings`, or call owner-only team RPCs.
+- **Last-owner guard:** An owner cannot demote or remove the last remaining owner of a business.
+- **Anonymous restrictions:** `anon` has no `EXECUTE` privilege on any authenticated-only RPC and cannot query business tables directly.
+
+**Option A — Using `psql` (local Supabase CLI or hosted database connection string):**
+
+```bash
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/isolation.sql
+```
+
+**Option B — Using the Supabase Dashboard SQL Editor:**
+
+1. Ensure migrations `001` through `010` have been applied.
+2. Paste the contents of [`supabase/tests/isolation.sql`](supabase/tests/isolation.sql) into the **SQL Editor** and click **Run**.
+3. Confirm the output logs `PASS: All cross-tenant isolation, staff RBAC, last-owner guard, and anon privilege tests succeeded.` Because the script ends with `ROLLBACK;`, no test rows remain in the database.
 
 ---
 
