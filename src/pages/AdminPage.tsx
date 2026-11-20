@@ -57,7 +57,7 @@ const VALID_TABS = new Set([
 
 export default function AdminPage() {
   const { logout } = useAdminAuth()
-  const { user, business } = useAuth()
+  const { user, business, memberships, activeFY, switchBusiness } = useAuth()
   const [showSettings, setShowSettings] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
@@ -271,14 +271,41 @@ export default function AdminPage() {
             </h1>
           </div>
 
-          <span className="text-xs text-[#667085] hidden sm:inline truncate">
-            {shopName}
-          </span>
+          <div className="flex items-center gap-2.5 shrink-0">
+            {activeFY && (
+              <span className="hidden sm:inline-flex items-center px-2 py-1 text-xs font-medium text-[#1A1D24] bg-[#F4F5F7] border border-[#E3E5EA] rounded-[6px] tabular-nums">
+                {activeFY.label}
+              </span>
+            )}
+            {memberships.length > 1 && business ? (
+              <select
+                aria-label="Switch active company"
+                value={business.id}
+                onChange={(e) => {
+                  const nextId = Number(e.target.value)
+                  if (nextId && nextId !== business.id) {
+                    void switchBusiness(nextId)
+                  }
+                }}
+                className="h-8 bg-white border border-[#E3E5EA] rounded-[6px] px-2.5 text-xs font-medium text-[#1A1D24]"
+              >
+                {memberships.map((m) => (
+                  <option key={m.business_id} value={m.business_id}>
+                    {resolveBrandName(m.business?.name)}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="text-xs text-[#667085] hidden sm:inline truncate">
+                {shopName}
+              </span>
+            )}
+          </div>
         </header>
 
         {/* Canvas Workspace */}
         <main className="flex-1 p-4 sm:p-6">
-          <div className="max-w-[1200px] mx-auto">
+          <div key={business?.id ?? 'none'} className="max-w-[1200px] mx-auto">
             {activeTab === 'dashboard' && <DashboardTab onNavigateTab={handleTabChange} />}
             {activeTab === 'products' && <ProductTab />}
             {activeTab === 'stock' && <StockTab />}

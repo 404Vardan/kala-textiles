@@ -1,8 +1,8 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { User, Session } from '@supabase/supabase-js'
-import supabase from '@/services/supabase'
-import type { Business, Membership, UserRole } from '@/types'
+import supabase, { getActiveBusinessId, setActiveBusinessId } from '@/services/supabase'
+import type { Branch, Business, FinancialYear, Membership, UserRole } from '@/types'
 
 interface AuthContextType {
   user: User | null
@@ -10,6 +10,10 @@ interface AuthContextType {
   membership: Membership | null
   memberships: Membership[]
   business: Business | null
+  branches: Branch[]
+  activeBranch: Branch | null
+  financialYears: FinancialYear[]
+  activeFY: FinancialYear | null
   role: UserRole | null
   isOwner: boolean
   isStaff: boolean
@@ -20,6 +24,7 @@ interface AuthContextType {
   signUp: (email: string, pass: string) => Promise<{ error: Error | null; needsEmailConfirmation: boolean }>
   signOut: () => Promise<void>
   refreshMembership: () => Promise<void>
+  switchBusiness: (businessId: number) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -30,24 +35,76 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [membership, setMembership] = useState<Membership | null>(null)
   const [memberships, setMemberships] = useState<Membership[]>([])
   const [business, setBusiness] = useState<Business | null>(null)
+  const [branches, setBranches] = useState<Branch[]>([])
+  const [activeBranch, setActiveBranch] = useState<Branch | null>(null)
+  const [financialYears, setFinancialYears] = useState<FinancialYear[]>([])
+  const [activeFY, setActiveFY] = useState<FinancialYear | null>(null)
   const [membershipError, setMembershipError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Monotonic sequence & in-flight deduplication to prevent auth/membership race conditions
   const mountedRef = useRef(true)
   const requestIdRef = useRef(0)
   const inFlightRef = useRef<{ userId: string; promise: Promise<UserRole | null> } | null>(null)
 
   const clearMembershipState = () => {
+    setActiveBusinessId(null)
     setMembership(null)
     setMemberships([])
     setBusiness(null)
+    setBranches([])
+    setActiveBranch(null)
+    setFinancialYears([])
+    setActiveFY(null)
     setMembershipError(null)
   }
 
-  const loadMembership = async (userId: string): Promise<UserRole | null> => {
-    // Reuse in-flight request if already fetching for the exact same userId
-    if (inFlightRef.current && inFlightRef.current.userId === userId) {
+  const loadCoreContext = async (activeBusinessId: number, currentRequestId: number) => {
+    try {
+      const [branchRes, fyRes] = await Promise.all([
+        supabase
+          .from('branches')
+          .select('*')
+          .eq('business_id', activeBusinessId)
+          .eq('is_active', true)
+          .order('is_default', { ascending: false }),
+        supabase
+          .from('financial_years')
+          .select('*')
+          .eq('business_id', activeBusinessId)
+          .order('start_date', { ascending: false }),
+      ])
+
+      if (!mountedRef.current || currentRequestId !== requestIdRef.current) return
+
+      if (!branchRes.error && Array.isArray(branchRes.data)) {
+        const branchList = branchRes.data as Branch[]
+        setBranches(branchList)
+        setActiveBranch(branchList.find((b) => b.is_default) || branchList[0] || null)
+      } else {
+        setBranches([])
+        setActiveBranch(null)
+      }
+
+      if (!fyRes.error && Array.isArray(fyRes.data)) {
+        const fyList = fyRes.data as FinancialYear[]
+        setFinancialYears(fyList)
+        setActiveFY(fyList.find((f) => f.is_active) || fyList[0] || null)
+      } else {
+        setFinancialYears([])
+        setActiveFY(null)
+      }
+    } catch {
+      // Stage 1 tables may not be migrated yet in older environments; fail gracefully
+      if (!mountedRef.current || currentRequestId !== requestIdRef.current) return
+      setBranches([])
+      setActiveBranch(null)
+      setFinancialYears([])
+      setActiveFY(null)
+    }
+  }
+
+  const loadMembership = async (userId: string, preferredBusinessId?: number): Promise<UserRole | null> => {
+    if (!preferredBusinessId && inFlightRef.current && inFlightRef.current.userId === userId) {
       return inFlightRef.current.promise
     }
 
@@ -66,9 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         if (memberErr) {
-          setMembership(null)
-          setMemberships([])
-          setBusiness(null)
+          clearMembershipState()
           setMembershipError(memberErr.message || 'Unable to verify business membership.')
           return null
         }
@@ -77,35 +132,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setMemberships(rows)
 
         if (rows.length === 0) {
+          setActiveBusinessId(null)
           setMembership(null)
           setBusiness(null)
+          setBranches([])
+          setActiveBranch(null)
+          setFinancialYears([])
+          setActiveFY(null)
           setMembershipError('No business membership found for this account.')
           return null
         }
 
-        // Consistent with database public.current_business_id(), which returns NULL when COUNT(*) <> 1
-        if (rows.length > 1) {
-          setMembership(null)
-          setBusiness(null)
-          setMembershipError(
-            'Multiple business memberships detected for this account. Ambiguous tenant selection is not permitted; please ensure a single active business membership.'
-          )
-          return null
-        }
+        // Resolve tab-scoped active company: explicit preference -> sessionStorage -> first membership
+        const desiredId = preferredBusinessId ?? getActiveBusinessId()
+        const activeMembership =
+          (desiredId !== null ? rows.find((r) => r.business_id === desiredId) : undefined) || rows[0]
 
-        const activeMembership = rows[0]
+        setActiveBusinessId(activeMembership.business_id)
         setMembership(activeMembership)
         setBusiness((activeMembership.business as Business) ?? null)
         setMembershipError(null)
+
+        await loadCoreContext(activeMembership.business_id, currentRequestId)
         return activeMembership.role
       } catch (err: any) {
         if (!mountedRef.current || currentRequestId !== requestIdRef.current) {
           return null
         }
         console.warn('Could not load membership:', err)
-        setMembership(null)
-        setMemberships([])
-        setBusiness(null)
+        clearMembershipState()
         setMembershipError(err?.message || 'Unable to load business membership.')
         return null
       } finally {
@@ -115,7 +170,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     })()
 
-    inFlightRef.current = { userId, promise }
+    if (!preferredBusinessId) {
+      inFlightRef.current = { userId, promise }
+    }
     return promise
   }
 
@@ -144,7 +201,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    // Initial session retrieval
     supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
       if (!initialResolved) {
         initialResolved = true
@@ -152,7 +208,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     })
 
-    // Listen for auth state changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, newSession) => {
@@ -244,10 +299,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const switchBusiness = async (businessId: number) => {
+    if (!user) return
+    setLoading(true)
+    await loadMembership(user.id, businessId)
+    if (mountedRef.current) {
+      setLoading(false)
+    }
+  }
+
   const hasMultipleMemberships = memberships.length > 1
   const role: UserRole | null = membership?.role || null
-  const isOwner = role === 'owner' && !hasMultipleMemberships
-  const isStaff = (role === 'staff' || role === 'owner') && !hasMultipleMemberships
+  const isOwner = role === 'owner'
+  const isStaff = role === 'staff' || role === 'owner'
 
   return (
     <AuthContext.Provider
@@ -257,6 +321,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         membership,
         memberships,
         business,
+        branches,
+        activeBranch,
+        financialYears,
+        activeFY,
         role,
         isOwner,
         isStaff,
@@ -267,6 +335,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signUp,
         signOut,
         refreshMembership,
+        switchBusiness,
       }}
     >
       {children}
