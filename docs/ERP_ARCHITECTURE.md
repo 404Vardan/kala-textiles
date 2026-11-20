@@ -1,6 +1,6 @@
-# Kala ERP — Target System & Database Architecture (Stage 0, Rev 2)
+# Kala ERP — Target System & Database Architecture (Stage 0, Rev 3)
 
-> **Status:** Stage 0 Architectural Blueprint — Hardened after Technical Architecture Review (Design Only — No existing code or migrations modified)  
+> **Status:** Stage 0 Architectural Blueprint — Final Hardened Revision (Design Only — No existing code or migrations modified)  
 > **Baseline:** `404Vardan/kala-textiles` (Migrations `001`–`010`, React 19 + TypeScript + Vite 7 + Supabase PostgreSQL + Capacitor)  
 > **Target Audience:** All textile businesses (wholesalers/traders, manufacturers, dyeing & printing mills, embroidery units, and textile agents) across **Kala Web**, **Kala Desktop**, and **Kala Mobile**.
 
@@ -19,25 +19,25 @@ flowchart TB
   end
 
   subgraph Core["Layer 1: Kala Core"]
-    C1["Multi-Company (Header-Scoped Tenancy)"]
+    C1["Multi-Company (Strict Request-Scoped Tenancy)"]
     C2["Branches & Warehouses"]
-    C3["Financial Years (FY Locking)"]
-    C4["Granular RBAC, Idempotency & Audit Log"]
+    C3["Financial Years (FY Locking & Close Guards)"]
+    C4["Granular RBAC, Payload-Hashed Idempotency & Audit"]
   end
 
   subgraph Domain["Operational & Financial Layers"]
     subgraph Inv["Layer 2: Kala Inventory"]
       I1["Unified Append-Only stock_ledger"]
       I2["SET Projection (inventory_stock + MWAC)"]
-      I3["TAKA/LOT Projection (inventory_takas + Specific Cost)"]
-      I4["Products & Variants (Color/Size/HSN)"]
+      I3["TAKA/LOT Projection + Split Lineage"]
+      I4["Products, Variants & Tax Categories"]
     end
 
     subgraph Fin["Layer 4: Kala Finance"]
-      F1["Chart of Accounts"]
-      F2["Immutable Double-Entry Vouchers (Dr = Cr)"]
-      F3["Bill-Wise Allocations & Ageing"]
-      F4["GST Snapshots, GSTR-1/3B, E-Invoice/E-Way"]
+      F1["Chart of Accounts & Cost Centres"]
+      F2["Strictly Immutable Vouchers & Reversals"]
+      F3["Dual-Locked Bill Allocations & Ageing"]
+      F4["Date-Effective GST Engine & Snapshots"]
     end
 
     subgraph Ops["Layer 3: Kala Operations"]
@@ -65,11 +65,11 @@ flowchart TB
   Fin --> Intel
 ```
 
-### Non-Negotiable Architectural Invariants
+### Non-Negotiable Security & Engineering Standards
 1. **Preserve Existing Production Capabilities:** Public QR URLs (`/:slug/p/:designNo`), buyer order requests (`submit_order_request`), atomic stock transfers/deductions, and RLS tenant isolation remain 100% backward-compatible.
-2. **One Stock Ledger & One Accounting Ledger:** Every inventory mutation appends to `stock_ledger`; every financial event posts an immutable, balanced double-entry voucher.
-3. **Single-Transaction Document Confirmation:** Confirming an invoice, purchase bill, return, or job-work receipt updates stock, valuation, and accounting inside **one PostgreSQL transaction**—never across multiple client API calls.
-4. **Stateless Multi-Company Scoping:** Active company selection is sent per request (`x-business-id` header / explicit RPC argument), preventing cross-tab tenant leakage.
+2. **`SECURITY DEFINER` Function Contract:** Every privileged RPC MUST declare `SECURITY DEFINER`, pin `SET search_path = public, pg_temp`, revoke execution from `PUBLIC` and `anon`, explicitly verify `auth.uid() IS NOT NULL`, validate `p_business_id` membership, and enforce `public.has_permission(p_business_id, '<permission>')` on the server—never trusting UI visibility.
+3. **Immutable Ledgers & Audit Trail:** `stock_ledger`, posted `vouchers` + `voucher_entries`, and `audit_events` are strictly append-only. `audit_events.actor_user_id` is always derived server-side from `auth.uid()`.
+4. **No Stage Ships Without Automated Verification:** Every stage requires passing SQL/integration tests for isolation, concurrency, reconciliation, and zero regressions before sign-off.
 
 ---
 
@@ -77,185 +77,193 @@ flowchart TB
 
 | Capability | Existing Kala (`001`–`010` + Phase 2 UI) | Target Kala ERP |
 | :--- | :--- | :--- |
-| **Tenancy & Auth** | `businesses`, `memberships` (`owner`/`staff`), `/signup`, `/reset-password`, team invite Edge Function | Request-scoped multi-company switching, `branches`, locked `financial_years`, granular RBAC (`roles`/`role_permissions`), `audit_events`, `idempotency_keys` |
-| **Catalog & QR** | `products`, `product_media`, tenant-scoped Storage, permanent QR labels, public product page | + `product_variants` (color/size), HSN codes, GST rates, multi-tier wholesale price lists |
-| **Inventory** | `inventory_locations`, `inventory_stock` (sets/pcs), `stock_movements` | **Unified `stock_ledger`** backing both `inventory_stock` (`SET` + MWAC) and `inventory_takas` (`TAKA`/`LOT` + specific cost) with reconciliation RPC |
+| **Tenancy & Auth** | `businesses`, `memberships` (`owner`/`staff`), `/signup`, `/reset-password`, team invite Edge Function | Request-scoped multi-company isolation + explicit `p_business_id` on RPCs, `branches`, locked `financial_years`, granular RBAC (`roles`/`role_permissions`), `audit_events`, payload-hashed `idempotency_keys` |
+| **Catalog & QR** | `products`, `product_media`, tenant-scoped Storage, permanent QR labels, public product page | + `product_variants` (color/size), HSN codes, date-effective `tax_categories`/`tax_rates`, multi-tier price lists |
+| **Inventory** | `inventory_locations`, `inventory_stock` (sets/pcs), `stock_movements` | **Unified `stock_ledger`** backing `inventory_stock` (`SET` + MWAC) and `inventory_takas` (`TAKA`/`LOT` + split lineage + specific cost) with 3-way reconciliation |
 | **Operations** | Buyer QR `order_requests`, wholesale `orders`, `invoices`, `parties`, `agents` | Full Sales & Purchase lifecycle, Sales/Purchase Returns, Job Work Challans, Mill Processing, Shortage/Elongation, BOM/Manufacturing |
-| **Finance** | Order/invoice totals only | Immutable double-entry accounting: Chart of Accounts, Vouchers, Reversals, Bill-wise Allocations, Cash/Bank Books, Ledgers, Trial Balance, P&L, Balance Sheet, GST/E-Invoice/E-Way |
-| **Clients** | React 19 + Vite Web + Capacitor Android + Phase 2 flat ERP UI | + Windows Desktop (**Tauri v2**) with silent thermal printing, optimistic concurrency (`row_version`), and draft-only offline sync |
+| **Finance** | Order/invoice totals only | Immutable double-entry accounting: Chart of Accounts, Cost Centres, Multi-Currency readiness, Vouchers, Reversal Vouchers, Dual-Locked Bill Allocations, Ledgers, Trial Balance, P&L, Balance Sheet, complete Indian GST engine |
+| **Clients** | React 19 + Vite Web + Capacitor Android + Phase 2 flat ERP UI | + Windows Desktop (**Tauri v2**) with silent thermal printing, `row_version` optimistic concurrency, and draft-only offline sync |
 
 ---
 
-## 3. Layer 1 — Kala Core (Safe Multi-Tenancy, Branches, Financial Years & RBAC)
+## 3. Layer 1 — Kala Core (Strict Multi-Company Tenancy, Branches, FY & RBAC)
 
-### 3.1 Multi-Company Switching Without Cross-Tab Leakage
-**Why a DB `user_preferences.active_business_id` column is unsafe:** If an owner opens Company A in Browser Tab 1 and switches to Company B in Browser Tab 2, a server-side `active_business_id` row mutates Tab 1's context silently. Tab 1's next `INSERT` (relying on `DEFAULT public.current_business_id()`) would write into Company B.
+### 3.1 Multi-Company Resolution & RLS Isolation
+`public.is_business_member(business_id)` alone is **insufficient** for multi-company users because it permits a query in Company A's tab to read or mutate Company B's rows.
 
-**Hardened Request-Scoped Resolution:**
-1. The frontend stores the selected company ID per browser tab/session (`sessionStorage` with `localStorage` initial default) and attaches it as an HTTP header (`x-business-id: <id>`) on every Supabase client call.
-2. `public.current_business_id()` resolves deterministically:
-   ```sql
-   -- 1. Check request header x-business-id (validated against memberships)
-   -- 2. Fallback: if user has exactly 1 row in memberships, return that business_id
-   -- 3. Otherwise return NULL (fail closed)
-   ```
-3. **RLS Write Protection:**
-   - `SELECT` policies continue using `public.is_business_member(business_id)` (or `business_id = public.current_business_id()` so Tab 1 only sees Company A's rows).
-   - `INSERT` / `UPDATE` / `DELETE` policies enforce `business_id = public.current_business_id()` AND `public.is_business_member(business_id)`, guaranteeing Tab 1 can never read or write Company B even while Tab 2 is active on Company B.
-   - Single-company users and existing tests (`isolation.sql`) continue working with zero breaking changes because of the `COUNT(*) = 1` fallback.
-4. **Optional `user_preferences`** stores only UI defaults (last opened company/branch on fresh login)—never used by RLS or SQL defaults.
+**Strict Enforcement Rules:**
+1. **Request-Scoped Company Resolution (`public.current_business_id()`):**
+   - Reads `x-business-id` from `current_setting('request.headers', true)::jsonb->>'x-business-id'`.
+   - If present: validates it is a positive integer AND `EXISTS (SELECT 1 FROM public.memberships WHERE user_id = auth.uid() AND business_id = v_header_biz)`. If invalid or unauthorized → returns `NULL` (**fail closed**).
+   - If absent: returns the sole `business_id` ONLY when `COUNT(*) = 1` in `public.memberships` (preserving 100% compatibility with single-company users and existing tests). For multi-company users with no header → returns `NULL` (**fail closed**).
+2. **Strict Tenant-Scoped RLS on Every Table:**
+   - Every tenant-scoped `SELECT`, `INSERT`, `UPDATE`, and `DELETE` policy enforces:
+     ```sql
+     business_id = public.current_business_id()
+     ```
+     (where `current_business_id()` has already validated membership against `auth.uid()`). A multi-company user with two browser tabs open cannot leak reads or writes between companies.
+3. **Explicit `p_business_id` on All Critical Transactional RPCs:**
+   - Privileged RPCs (`confirm_sales_invoice_tx`, `transfer_stock_tx`, `post_voucher_tx`, `close_financial_year_tx`, etc.) accept an explicit `p_business_id BIGINT`, verify `auth.uid() IS NOT NULL`, verify `public.is_business_member(p_business_id)`, and verify `public.has_permission(p_business_id, '<perm>')`—never relying solely on ambient HTTP headers.
 
-### 3.2 Branches, Financial Years & Document Counters
-- **`branches`**: `(id, business_id, code, name, gstin, state_code, address, is_default, is_active)` — `inventory_locations.branch_id` links each godown/shop floor to a branch.
-- **`financial_years`**: `(id, business_id, label TEXT, start_date DATE, end_date DATE, is_active BOOLEAN, is_locked BOOLEAN)`
-  - Non-overlapping date range constraint (`EXCLUDE USING gist` on `(business_id WITH =, daterange(start_date, end_date, '[]') WITH &&)`).
-  - **FY Lock Guard Trigger:** Rejects any `INSERT`/`UPDATE`/`DELETE` on `vouchers`, `voucher_entries`, `sales_invoices`, `purchase_bills`, or `stock_ledger` whose document date falls in a locked FY or outside any defined FY.
-- **`business_document_counters`**: Scoped by `(business_id, branch_id, fy_id, doc_type)` using `INSERT ... ON CONFLICT DO UPDATE` row locks so GST invoice sequences remain strictly monotonic and gap-free.
+### 3.2 Branches, Financial Years & Document Numbering
+- **`branches`**: `(id, business_id, code, name, gstin, state_code, address, is_default, is_active)`. `inventory_locations.branch_id` links each godown/shop floor to a branch.
+- **`financial_years`**: `(id, business_id, label TEXT, start_date DATE, end_date DATE, is_active BOOLEAN, is_locked BOOLEAN)` with non-overlapping constraint `EXCLUDE USING gist (business_id WITH =, daterange(start_date, end_date, '[]') WITH &&)`.
+  - **FY Lock Trigger:** Rejects any `INSERT`/`UPDATE`/`DELETE` on `vouchers`, `voucher_entries`, `sales_invoices`, `purchase_bills`, or `stock_ledger` dated outside an open FY or inside a locked FY.
+  - **FY Close Pre-Checks (`close_financial_year_tx`):** Blocks closing if unposted drafts or pending unallocated settlements exist in that FY (unless explicitly resolved/cancelled first), reconciles opening balances (`SUM(DR) = SUM(CR)`), transfers Net Profit/Loss to Reserves/Capital, seeds next FY opening balances, and sets `is_locked = TRUE`.
+- **Document Numbering (`business_document_counters`):**
+  - Scoped by `(business_id, branch_id, fy_id, doc_type)` using transactional row locks.
+  - **Guarantee:** **Unique, strictly ordered document numbering** within each `(company, branch, financial_year, doc_type)` with full cancellation history preserved. Cancelled numbers are **never reused** (and we do not falsely promise gap-free numbering in the presence of cancellations or rolled-back transactions).
 
-### 3.3 Granular RBAC, Idempotency & Audit Trail
-- **`roles` & `role_permissions`**: Preserve `memberships.role` (`owner | staff`) for backward compatibility while adding `memberships.role_id` pointing to `roles` (`Owner`, `Manager`, `Accountant`, `Inventory Staff`, `Sales Staff`) checked via `public.has_permission(p_business_id, p_permission_key)`.
-- **`idempotency_keys`**: `(business_id, idempotency_key UUID, action_type, response_json JSONB, created_at, PRIMARY KEY (business_id, idempotency_key))` — prevents duplicate stock deductions or double-posted vouchers on network retries.
-- **`audit_events`**: Append-only table `(id, business_id, actor_user_id, entity_type, entity_id, action, before_json, after_json, created_at)` with `UPDATE`/`DELETE` revoked from all roles.
+### 3.3 Granular RBAC, Payload-Hashed Idempotency & Immutable Audit
+- **RBAC:** `roles (id, business_id, name, is_system)` + `role_permissions (role_id, permission_key)` + `public.has_permission(p_business_id, p_permission_key)` enforced inside every privileged RPC. Existing `memberships.role` (`owner | staff`) stays mapped to system roles for backward compatibility.
+- **Payload-Hashed Idempotency (`idempotency_keys`):**
+  - `(business_id BIGINT, idempotency_key UUID, action_type TEXT, request_hash TEXT NOT NULL, response_json JSONB, created_at TIMESTAMPTZ, PRIMARY KEY (business_id, idempotency_key))`.
+  - If the same `idempotency_key` is sent again with the **same `request_hash`**, return `response_json` without re-executing.
+  - If the same `idempotency_key` is reused with a **different `request_hash`**, reject with an explicit `Idempotency key conflict` error.
+- **Immutable Audit (`audit_events`):**
+  - `(id, business_id, actor_user_id UUID NOT NULL DEFAULT auth.uid(), entity_type, entity_id, action, before_json, after_json, created_at)`. `UPDATE` and `DELETE` revoked from all roles; `actor_user_id` is always populated from `auth.uid()`.
 
 ---
 
-## 4. Layer 2 — Kala Inventory (Unified Ledger + Valuation & Reconciliation)
+## 4. Layer 2 — Kala Inventory (Unified Ledger, Taka Lineage & Valuation)
 
-### 4.1 Single Source of Truth: `stock_ledger`
-Instead of maintaining two disconnected movement engines (`stock_movements` for Sets and `taka_movements` for Takas), **every** inventory event across the entire ERP writes to one append-only **`stock_ledger`** table:
+### 4.1 Unified Append-Only `stock_ledger`
+All `SET`, `PIECE`, and `TAKA`/`METER` movements write to one immutable ledger:
 
 ```sql
 stock_ledger (
-  id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  business_id     BIGINT NOT NULL,
-  branch_id       BIGINT NOT NULL,
-  fy_id           BIGINT NOT NULL,
-  product_id      BIGINT NOT NULL,
-  variant_id      BIGINT NULL,
-  lot_id          BIGINT NULL,
-  taka_id         BIGINT NULL,
-  location_id     BIGINT NOT NULL,
-  movement_type   TEXT NOT NULL, -- INTAKE, PURCHASE_IN, TRANSFER_OUT, TRANSFER_IN, DISPATCH, RETURN_IN, RETURN_OUT, JOB_OUT, JOB_IN, PRODUCTION_CONSUME, PRODUCTION_OUT, ADJUSTMENT
-  qty_delta       NUMERIC(12,3) NOT NULL, -- +inward / -outward (in product's base UOM)
-  pcs_delta       INT NOT NULL DEFAULT 0,
-  uom             TEXT NOT NULL CHECK (uom IN ('SET','PCS','MTR','KG')),
-  unit_cost       NUMERIC(12,4) NOT NULL DEFAULT 0, -- Frozen cost at movement time
-  value_delta     NUMERIC(14,2) NOT NULL DEFAULT 0, -- ROUND(qty_delta * unit_cost, 2)
-  ref_doc_type    TEXT NOT NULL,
-  ref_doc_id      BIGINT NOT NULL,
-  staff_name      TEXT,
-  notes           TEXT,
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id                      BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  business_id             BIGINT NOT NULL,
+  branch_id               BIGINT NOT NULL,
+  fy_id                   BIGINT NOT NULL,
+  transaction_group_id    UUID NOT NULL,          -- Groups all rows of one atomic operation (e.g., transfer out + in)
+  reversal_of_id          BIGINT NULL REFERENCES public.stock_ledger(id),
+  product_id              BIGINT NOT NULL,
+  variant_id              BIGINT NULL,
+  lot_id                  BIGINT NULL,
+  taka_id                 BIGINT NULL,
+  location_id             BIGINT NOT NULL,
+  movement_type           TEXT NOT NULL,          -- INTAKE, PURCHASE_IN, TRANSFER_OUT, TRANSFER_IN, DISPATCH, RETURN_IN, RETURN_OUT, JOB_OUT, JOB_IN, SPLIT_OUT, SPLIT_IN, PRODUCTION_CONSUME, PRODUCTION_OUT, ADJUSTMENT
+  movement_date           DATE NOT NULL,
+  qty_delta               NUMERIC(12,3) NOT NULL, -- +inward / -outward in base UOM
+  pcs_delta               INT NOT NULL DEFAULT 0,
+  uom                     TEXT NOT NULL CHECK (uom IN ('SET','PCS','MTR','KG')),
+  unit_cost               NUMERIC(12,4) NOT NULL DEFAULT 0,
+  value_delta             NUMERIC(14,2) NOT NULL DEFAULT 0,
+  ref_doc_type            TEXT NOT NULL,
+  ref_doc_id              BIGINT NOT NULL,
+  source_document_line_id BIGINT NULL,
+  idempotency_key         UUID NULL,
+  created_by              UUID NOT NULL,          -- Server-derived auth.uid()
+  posted_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  notes                   TEXT
 )
 ```
 
-- **Strict Immutability:** `UPDATE` and `DELETE` on `stock_ledger` are revoked; corrections append offsetting `ADJUSTMENT` or `RETURN` rows.
-- **Backward Compatibility:** Existing `stock_movements` rows are migrated/bridged into `stock_ledger` during Stage 2, and `stock_movements` can remain as a read-only compatibility view if needed.
+- **Atomic Stock Transfers:** Transferring 100 m (or 10 sets) from Godown A to Godown B generates **two linked rows** sharing one `transaction_group_id`:
+  1. `location_id = Godown A`, `movement_type = 'TRANSFER_OUT'`, `qty_delta = -100`, `unit_cost = source_cost`
+  2. `location_id = Godown B`, `movement_type = 'TRANSFER_IN'`, `qty_delta = +100`, `unit_cost = source_cost`
+  Both commit or roll back together, preserving inventory cost across locations.
+- **Negative Stock Prevention:** `CHECK (sets >= 0 AND total_pcs >= 0)` on `inventory_stock` and `CHECK (current_meters >= 0)` on `inventory_takas`, verified under `FOR UPDATE` row locks in deterministic `ORDER BY id ASC` before any outward deduction.
 
-### 4.2 Fast Current-State Projections (Never Edited Directly)
-1. **Set/Piece Projection (`inventory_stock` — existing table extended):**
-   - Adds `reserved_sets INT DEFAULT 0`, `avg_unit_cost NUMERIC(12,4) DEFAULT 0`, `row_version INT DEFAULT 1`.
-   - Updated **exclusively** inside transactional inventory RPCs in the same transaction that appends to `stock_ledger`.
-2. **Lot & Serialized Taka Projection (`inventory_lots` & `inventory_takas`):**
-   - `inventory_lots`: `(id, business_id, product_id, variant_id, lot_no, supplier_party_id, mill_party_id, shade_no, gsm, width_inches, landed_cost_per_unit, received_date)`.
-   - `inventory_takas`: `(id, business_id, lot_id, product_id, variant_id, location_id, taka_no, barcode_value, initial_meters, current_meters, weight_kg, status CHECK (status IN ('in_stock','reserved','in_process','dispatched','consumed','damaged')), row_version)`.
-   - **Taka Splitting/Cutting:** Cutting 15 m from a 48 m taka appends `-15` m (`DISPATCH` or `CUT_OUT`) to `stock_ledger` against `taka_id` and decrements `inventory_takas.current_meters` to `33` m inside one locked transaction.
+### 4.2 Taka Lineage & Splitting Model
+- **`inventory_lots`**: `(id, business_id, product_id, variant_id, lot_no, supplier_party_id, mill_party_id, shade_no, gsm, width_inches, landed_cost_per_unit, received_date)`.
+- **`inventory_takas`**: `(id, business_id, lot_id, parent_taka_id NULL REFERENCES inventory_takas(id), product_id, variant_id, location_id, taka_no, barcode_value, initial_meters NUMERIC(10,2), current_meters NUMERIC(10,2), weight_kg NUMERIC(10,3), status CHECK (status IN ('in_stock','reserved','in_process','split','dispatched','consumed','damaged')), row_version INT DEFAULT 1)`.
+- **`taka_splits`**: `(id, business_id, parent_taka_id, child_taka_id, meters_allocated NUMERIC(10,2), transaction_group_id UUID, created_by UUID, created_at TIMESTAMPTZ)`.
+  - Splitting a 48 m roll (`TK-001`) into 15 m (`TK-001-A`) and 33 m (`TK-001-B`) marks `TK-001` as `status = 'split'`, `current_meters = 0`, creates both child rolls referencing `parent_taka_id = TK-001`, writes `taka_splits` rows, and logs balanced `SPLIT_OUT` (-48 m) + `SPLIT_IN` (+15 m, +33 m) entries in `stock_ledger` under one `transaction_group_id` at the same `unit_cost`.
 
-### 4.3 Valuation & Reconciliation Strategy
-- **Valuation Rules (Deterministic & Auditable):**
-  - `tracking_mode = 'TAKA'`: **Specific Identification** — each taka is valued at `taka.current_meters * lot.landed_cost_per_unit` (including grey cloth cost + capitalized mill processing cost).
-  - `tracking_mode = 'SET' | 'PIECE'`: **Moving Weighted Average Cost (MWAC)** — on every inward movement:
-    $$\text{new\_avg\_cost} = \frac{(\text{old\_qty} \times \text{old\_avg\_cost}) + (\text{in\_qty} \times \text{in\_unit\_cost})}{\text{old\_qty} + \text{in\_qty}}$$
-    Every outward movement (`DISPATCH`) records `unit_cost = current avg_unit_cost` on `stock_ledger` so historical Cost of Goods Sold (COGS) never shifts retroactively.
-- **Automated Reconciliation (`verify_inventory_integrity(p_business_id)`):**
-  - Asserts `SUM(stock_ledger.qty_delta)` equals `inventory_stock.sets` for every `SET` product/location and equals `inventory_takas.current_meters` for every `TAKA`. Run in CI/tests and owner health checks.
+### 4.3 Valuation Policy & Backdated Posting Guard
+- **`TAKA` / `LOT` Valuation:** **Specific Identification** (`taka.current_meters * lot.landed_cost_per_unit`).
+- **`SET` / `PIECE` Valuation:** **Moving Weighted Average Cost (MWAC)** on `inventory_stock.avg_unit_cost` updated on inward receipts and frozen into `stock_ledger.unit_cost` on outward dispatches.
+- **Backdated Posting Rule (Initial Policy):**
+  - Users may save backdated **drafts**, but **posting** a stock movement with `movement_date < MAX(movement_date)` of already-posted movements for the same `(business_id, product_id, location_id)` is **rejected** by the posting RPC. This prevents retroactive corruption of MWAC and historical COGS. Corrections are posted as current-dated adjustment or return entries.
+- **Three-Way Reconciliation (`verify_inventory_integrity(p_business_id)`):**
+  1. **Set/Piece Quantity Reconciliation:** `SUM(stock_ledger.qty_delta)` = `inventory_stock.sets` per `(product_id, location_id)`.
+  2. **Physical Roll Quantity Reconciliation:** `SUM(stock_ledger.qty_delta)` = `inventory_takas.current_meters` per `taka_id`.
+  3. **Valuation Reconciliation:** `SUM(stock_ledger.value_delta)` = total closing stock valuation across `inventory_stock` + `inventory_takas`.
 
 ---
 
-## 5. Layer 4 — Kala Finance (Strict Accounting Integrity & GST)
+## 5. Layer 4 — Kala Finance (Truly Immutable Accounting & Complete GST Engine)
 
-### 5.1 Chart of Accounts & Immutable Double-Entry Vouchers
-- **`accounts`**: `(id, business_id, code, name, account_group IN ('asset','liability','equity','income','expense'), sub_group, party_id NULL, opening_balance, opening_balance_type IN ('DR','CR'), is_system)`.
-- **`vouchers`**: `(id, business_id, branch_id, fy_id, voucher_no, voucher_type IN ('SALES','PURCHASE','SALES_RETURN','PURCHASE_RETURN','RECEIPT','PAYMENT','JOURNAL','CONTRA','REVERSAL'), voucher_date, ref_doc_type, ref_doc_id, reversed_voucher_id NULL, narration, total_amount, status IN ('draft','posted','reversed'), posted_by, posted_at)`.
-- **`voucher_entries`**: `(id, business_id, voucher_id, account_id, debit NUMERIC(14,2) DEFAULT 0, credit NUMERIC(14,2) DEFAULT 0, CHECK (debit >= 0 AND credit >= 0 AND NOT (debit > 0 AND credit > 0) AND (debit > 0 OR credit > 0)))`.
+### 5.1 Chart of Accounts, Cost Centres & Multi-Currency Readiness
+- **`accounts`**: `(id, business_id, code, name, account_group IN ('asset','liability','equity','income','expense'), sub_group, party_id NULL, opening_balance NUMERIC(14,2), opening_balance_type IN ('DR','CR'), is_system)`. Opening balance totals are validated via `verify_opening_balances(p_business_id, p_fy_id)` (`SUM(DR) = SUM(CR)`).
+- **`cost_centers`**: `(id, business_id, code, name, is_active)` for branch, mill, or product-line profitability tracking.
+- **`vouchers`**: `(id, business_id, branch_id, fy_id, voucher_no, voucher_type IN ('SALES','PURCHASE','SALES_RETURN','PURCHASE_RETURN','RECEIPT','PAYMENT','JOURNAL','CONTRA','REVERSAL'), voucher_date, currency_code CHAR(3) DEFAULT 'INR', exchange_rate NUMERIC(14,6) DEFAULT 1.0, ref_doc_type, ref_doc_id, reversed_voucher_id NULL REFERENCES vouchers(id), narration, total_amount NUMERIC(14,2), base_total_amount NUMERIC(14,2), status IN ('draft','posted'), created_by UUID, posted_at TIMESTAMPTZ)`.
+- **`voucher_entries`**: `(id, business_id, voucher_id, account_id, cost_center_id NULL, debit NUMERIC(14,2) DEFAULT 0, credit NUMERIC(14,2) DEFAULT 0, base_debit NUMERIC(14,2) DEFAULT 0, base_credit NUMERIC(14,2) DEFAULT 0, CHECK (debit >= 0 AND credit >= 0 AND NOT (debit > 0 AND credit > 0) AND (debit > 0 OR credit > 0)))`.
 
-### 5.2 Hard Accounting Invariants (Database-Enforced)
-1. **Deferred Balance Constraint Trigger:** `CONSTRAINT TRIGGER trg_voucher_balanced AFTER INSERT OR UPDATE OR DELETE ON voucher_entries DEFERRABLE INITIALLY DEFERRED` rejects commit if any `posted` voucher has `SUM(debit) <> SUM(credit)` or `SUM(debit) <= 0`.
-2. **Post-Immutability & Reversal-Only Corrections:** A `BEFORE UPDATE OR DELETE` trigger on `vouchers` and `voucher_entries` blocks all mutations once `vouchers.status = 'posted'` (except setting `status = 'reversed'` exclusively inside `reverse_voucher_tx(p_voucher_id)`). Corrections must post a linked `REVERSAL` voucher (swapping debits and credits) or a Credit/Debit Note.
-3. **Bill-Wise Allocation Locking:** `bill_allocations (id, business_id, settlement_voucher_id, invoice_voucher_id, allocated_amount)` locks `invoice_voucher_id` `FOR UPDATE`, verifies same `business_id` and same party account, and enforces `SUM(allocated_amount) <= invoice_voucher.total_amount` so concurrent receipts can never over-allocate a bill.
-4. **Immutable GST Snapshots:** At invoice confirmation, each line freezes `hsn_code`, `taxable_value`, `cgst_rate`, `cgst_amount`, `sgst_rate`, `sgst_amount`, `igst_rate`, `igst_amount`, and header `round_off`. Future changes to `products.gst_rate` or `parties.gst_number` never alter historical GST filings (GSTR-1/GSTR-3B).
-5. **Financial-Year Locking & Closing RPC:** `close_financial_year_tx(p_fy_id)` locks the FY (`is_locked = true`), computes closing balances of all Balance Sheet accounts, transfers Net Profit/Loss to Retained Earnings/Capital, and seeds the opening balances for the next FY atomically.
+### 5.2 Strictly Immutable Reversals & Dual-Locked Bill Allocations
+1. **Zero Mutation of Posted Vouchers:** Once `vouchers.status = 'posted'`, a `BEFORE UPDATE OR DELETE` trigger **unconditionally blocks** all modifications on both `vouchers` and `voucher_entries`—no exceptions.
+2. **Separate Reversal Voucher:** `reverse_voucher_tx(p_business_id, p_voucher_id, p_reversal_date, p_reason, p_idempotency_key)` keeps the original voucher permanently `posted`, creates a new `REVERSAL` voucher with `reversed_voucher_id = p_voucher_id` and swapped debit/credit entries.
+   - **Single-Reversal Guard:** `CREATE UNIQUE INDEX uq_vouchers_single_reversal ON public.vouchers (business_id, reversed_voucher_id) WHERE reversed_voucher_id IS NOT NULL AND status = 'posted'` guarantees a voucher can never be reversed twice.
+3. **Deferred Balance Enforcement:** `CONSTRAINT TRIGGER trg_voucher_balanced AFTER INSERT OR UPDATE OR DELETE ON voucher_entries DEFERRABLE INITIALLY DEFERRED` asserts `SUM(base_debit) = SUM(base_credit) AND SUM(base_debit) > 0` for every posted voucher.
+4. **Dual-Side Bill Allocation Locking (`bill_allocations`):**
+   - `allocate_bill_payment_tx` locks **both** `invoice_voucher_id` AND `settlement_voucher_id` in deterministic `ORDER BY id ASC FOR UPDATE`, and validates:
+     - `SUM(allocated_amount WHERE invoice_voucher_id = X) <= invoice_voucher.total_amount` (cannot over-settle an invoice), AND
+     - `SUM(allocated_amount WHERE settlement_voucher_id = Y) <= settlement_voucher.total_amount` (cannot double-spend a receipt/payment across concurrent allocations).
+
+### 5.3 Complete Indian GST Tax Engine
+Products do **not** carry a hardcoded `DEFAULT 5.00` tax rate. Instead:
+- **`tax_categories`**: `(id, business_id, name, hsn_sac_code, supply_nature IN ('GOODS','SERVICES'), is_exempt, is_nil_rated)`
+- **`tax_rates`**: `(id, business_id, tax_category_id, effective_from DATE, effective_to DATE NULL, cgst_rate NUMERIC(5,2), sgst_rate NUMERIC(5,2), igst_rate NUMERIC(5,2), cess_rate NUMERIC(5,2), rate_threshold_amount NUMERIC(12,2) NULL)` — supports historical rate changes and textile price-slab GST thresholds (e.g. apparel <= ₹1,000 vs > ₹1,000).
+- **Invoice Tax Determination Inputs:**
+  - `place_of_supply_state_code` (resolved from `ship_to` / `bill_to` rules),
+  - `supply_type` (`B2B_REGULAR`, `B2C`, `SEZ_WITH_PAY`, `SEZ_WITHOUT_PAY`, `EXPORT_WITH_PAY`, `EXPORT_WITHOUT_PAY`, `EXEMPT`, `NIL_RATED`),
+  - `is_reverse_charge BOOLEAN`, `is_tax_inclusive BOOLEAN`,
+  - Line & header `discount_amount`, `freight_amount` (taxed at highest applicable line rate or freight SAC rate), `cess_amount`, and `round_off`.
+- **Immutable Tax Snapshot (`invoice_tax_snapshots` / line columns):** On invoice confirmation, freeze seller GSTIN/state, buyer GSTIN/state, bill-to/ship-to addresses, place of supply, supply type, reverse-charge flag, HSN, tax category, tax rates, cess, discounts, freight, and taxable/tax amounts so future master edits never alter filed GSTR-1/GSTR-3B numbers.
 
 ---
 
 ## 6. Layer 3 — Kala Operations & Atomic Document Lifecycle
 
-### 6.1 Order vs. Invoice Stock Deduction Rule (Preventing Double-Deduction)
-Existing Kala deducts stock when confirming a wholesale order (`confirm_order_and_deduct_stock_tx`). When `sales_invoices` are added, stock must **never** be deducted twice:
-- **Rule:**
-  - `orders` gain `fulfillment_mode TEXT DEFAULT 'DIRECT_DISPATCH' CHECK (fulfillment_mode IN ('DIRECT_DISPATCH', 'RESERVE_FOR_INVOICE'))`.
-  - When a `sales_invoice` is created from an order that already ran `DIRECT_DISPATCH`, `sales_invoices.stock_already_deducted = TRUE` (confirmation posts only the financial voucher, skipping stock deduction).
-  - For new ERP workflows using `RESERVE_FOR_INVOICE`, confirming an Order increments `inventory_stock.reserved_sets` (or sets `taka.status = 'reserved'`), and confirming the **Sales Invoice** releases the reservation, appends `DISPATCH` to `stock_ledger`, and posts the `SALES` voucher atomically.
-
-### 6.2 Single-Transaction Orchestrator Pattern
-Every state transition executes inside **one `SECURITY DEFINER` PostgreSQL RPC** (never orchestrated across multiple frontend calls):
-
-```text
-confirm_sales_invoice_tx(p_invoice_id, p_location_id, p_idempotency_key)
-  1. Check idempotency_keys -> return cached JSON if already processed
-  2. Lock sales_invoices row FOR UPDATE; verify status = 'draft' and open financial_year
-  3. Lock inventory_stock / inventory_takas rows in ORDER BY id ASC (deadlock-free)
-  4. Validate available stock / taka meters; append stock_ledger rows + update projections
-  5. Freeze GST tax breakdown (CGST/SGST vs IGST from branch.state_code vs party.state_code)
-  6. Insert posted SALES voucher + balanced voucher_entries (Dr Party, Cr Sales, Cr Tax, Cr/Dr Round-off)
-  7. Update sales_invoices SET status = 'confirmed', voucher_id = v_voucher_id
-  8. Record audit_events + idempotency_keys -> COMMIT (or full ROLLBACK on any error)
-```
-
-The exact same single-transaction pattern governs `confirm_purchase_bill_tx`, `confirm_sales_return_tx`, `confirm_purchase_return_tx`, `issue_job_work_challan_tx`, `receive_job_work_tx` (computing shortage/elongation % and landed cost rollup), and `complete_production_run_tx`.
+- **Order vs. Invoice Deduction Rule:** `orders.fulfillment_mode` (`DIRECT_DISPATCH` vs `RESERVE_FOR_INVOICE`) + `sales_invoices.stock_already_deducted` guarantees stock is never deducted twice.
+- **Single-Transaction Orchestrators:** Every confirmation (`confirm_sales_invoice_tx`, `confirm_purchase_bill_tx`, `confirm_sales_return_tx`, `confirm_purchase_return_tx`, `issue_job_work_challan_tx`, `receive_job_work_tx`, `complete_production_run_tx`) runs in one PostgreSQL transaction:
+  1. Check `idempotency_keys` (with `request_hash` match check).
+  2. Validate `auth.uid()`, `p_business_id`, and `has_permission(p_business_id, ...)`.
+  3. Lock document `FOR UPDATE`, verify `status = 'draft'` and open FY + chronological stock posting rule.
+  4. Lock stock/taka rows in deterministic `ORDER BY id ASC`.
+  5. Append `stock_ledger` rows (`transaction_group_id`) and update projections.
+  6. Freeze GST tax snapshot and post balanced, immutable `vouchers` + `voucher_entries`.
+  7. Transition document to `confirmed` and write `audit_events` + `idempotency_keys`.
 
 ---
 
 ## 7. Layer 5 — Kala Intelligence
 
-1. **Analytical Views/RPCs:** Fast/slow moving designs, gross margin per design/lot (powered by frozen `stock_ledger.unit_cost`), overdue receivables ageing (powered by `bill_allocations`), and mill shrinkage/shortage %.
-2. **AI Assistant (`kala-ai-assistant` Edge Function):** Uses strict tool-calling against whitelisted, tenant-scoped, read-only SQL RPCs—never LLM-generated raw SQL.
+- **Read-Only Analytical Views:** Fast/slow designs, gross margin per design/lot (from frozen `stock_ledger.unit_cost`), overdue ageing (from `bill_allocations`), mill shrinkage/shortage %.
+- **AI Assistant (`kala-ai-assistant` Edge Function):** Strictly invokes whitelisted, tenant-scoped, read-only SQL RPCs—never LLM-generated raw SQL.
 
 ---
 
 ## 8. Desktop (Tauri v2) & Offline Synchronisation Protocol
 
-### 8.1 Desktop Wrapper: Tauri v2 (Recommended over Electron)
-- **Tauri v2** (~8–15 MB installer, ~60–120 MB RAM on 4–8 GB textile shop PCs) wraps the existing React 19 + Vite 7 build (`dist/`), adding native Rust commands behind `src/platform/bridge.ts` for silent Windows spooler printing, raw ESC/POS & TSC/Zebra TSPL/ZPL barcode label printing, USB HID barcode scanner input, and local SQLite caching.
-
-### 8.2 Hardened Offline & Conflict Resolution Protocol
-A naive client sync queue is unsafe for inventory and GST accounting. Kala enforces four strict offline rules:
-1. **Draft-Only Offline Boundary:** Offline devices can read cached masters (`products`, `parties`, `agents`) and create/edit **Drafts** (draft orders, draft stock intake scans, QR scan batches). **Authoritative Confirmations** (stock deduction, voucher posting, GST invoice numbering, FY closing) execute **only on the server** when online.
-2. **Temporary Local IDs → Server-Assigned Sequences:** Offline drafts carry a client UUID (`client_draft_id`) and display `LOCAL-DRAFT`. Authoritative sequential `order_no` / `invoice_no` / `voucher_no` are assigned strictly by PostgreSQL on sync—preventing GST sequence gaps or collisions.
-3. **Idempotency Keys:** Every synced mutation sends its deterministic `p_idempotency_key UUID` so network timeouts or app restarts never double-create drafts or double-post vouchers.
-4. **Optimistic Concurrency Control (`row_version`):** Mutable records (`products`, `parties`, `orders`) carry `row_version INT`. Sync updates include `WHERE id = $1 AND row_version = $expected`. If another user modified the record on the server, PostgreSQL returns a conflict error (`409`), and the client displays a side-by-side resolution dialog instead of silently overwriting.
+- **Desktop Choice:** **Tauri v2** (~8–15 MB installer, low RAM on shop PCs, native Rust silent Windows spooler + ESC/POS + TSC/Zebra TSPL/ZPL thermal printing, USB HID barcode scanner, local SQLite cache) behind `src/platform/bridge.ts`.
+- **Hardened Offline Protocol:**
+  1. **Draft-Only Offline Boundary:** Offline devices may read cached masters and create/edit **Drafts** & **Scan Batches**. Authoritative confirmations (stock deductions, voucher postings, sequential invoice/voucher numbers, FY close) execute **only on the server**.
+  2. **Payload-Hashed Idempotency:** Every synced draft submission includes a deterministic `client_draft_id` + `idempotency_key` + `request_hash` so duplicate retries never create duplicate drafts.
+  3. **Optimistic Concurrency (`row_version`):** Master records (`products`, `parties`, `agents`) and drafts carry `row_version INT`. Stale updates fail with `409 Conflict` and prompt explicit user resolution rather than silently overwriting concurrent edits.
 
 ---
 
 ## 9. Commercial Model Readiness (SaaS vs. Enterprise)
 
-- **`subscription_plans` & `business_subscriptions`**: Server-side `has_module(business_id, module_key)` gates optional ERP modules (`inventory_taka`, `accounting`, `job_work`, `manufacturing`, `ai_assistant`) and branch/user limits.
-- **Single Codebase:** Runs identically on hosted Supabase Cloud (Model B: SaaS) or customer-dedicated/self-hosted Supabase PostgreSQL (Model C: Enterprise / RELY alternative).
+- `subscription_plans` + `business_subscriptions` + server-side `has_module(p_business_id, p_module_key)` support both SaaS subscriptions (hosted Supabase Cloud) and Enterprise deployments (dedicated/self-hosted Supabase PostgreSQL) from one codebase.
 
 ---
 
-## 10. Restructured Dependency-Driven Stage Roadmap (Stages 1–8)
+## 10. Stage 1–8 Roadmap & Mandatory Automated Exit Gates
 
-To eliminate rework across stages, **Unified Inventory (Stage 2)** and **Accounting Core (Stage 3)** are built *before* **Full Trade Operations (Stage 4)** and **Job Work/Manufacturing (Stage 5)**:
+No stage is considered complete merely because its UI works. Every stage must pass **automated SQL + integration tests** before advancing:
 
-| Stage | Focus | Planned Migrations | Dependencies & Exit Criteria |
+| Stage | Focus | Planned Migrations | Mandatory Exit Test Gates |
 | :---: | :--- | :---: | :--- |
-| **0** | **Architecture Blueprint** | *(None — this doc)* | Approved hardened architecture (Rev 2) before touching code/schema. |
-| **1** | **Kala Core** | `011`–`014` | Header-scoped `current_business_id()`, `branches`, `financial_years` (FY lock), granular `roles`/`permissions`, `idempotency_keys`, `audit_events`, `row_version` columns. |
-| **2** | **Unified Inventory Foundation** | `015`–`019` | Append-only `stock_ledger`, `product_variants`, `inventory_lots`, `inventory_takas`, MWAC + specific-cost valuation, taka cutting RPC, `verify_inventory_integrity()` reconciliation test. |
-| **3** | **Accounting Core** | `020`–`024` | `accounts` (default Chart of Accounts), immutable `vouchers` + `voucher_entries` (deferred balance trigger), `reverse_voucher_tx`, `bill_allocations`, Receipt/Payment/Journal/Contra vouchers, `close_financial_year_tx`. |
-| **4** | **Trade Operations & GST** | `025`–`030` | `sales_invoices`, `sales_returns`, `purchase_orders`, `purchase_bills`, `purchase_returns`, single-tx confirm RPCs posting directly to Stage 2 `stock_ledger` & Stage 3 `vouchers`, frozen GST snapshots, no double-deduction guard. |
-| **5** | **Job Work & Manufacturing** | `031`–`035` | `job_work_challans`, `job_work_receipts`, mill-wise stock balance, shortage/elongation % reports, landed cost rollup, `bom_recipes`, `production_runs`. |
-| **6** | **Financial Reports, Desktop & Mobile** | `036`–`038` | Cash/Bank Books, Party/Supplier Ledgers, Trial Balance, P&L, Balance Sheet, GSTR-1/3B exports; Tauri v2 Windows desktop wrapper, silent thermal printing, draft-only offline sync with `row_version` conflict handling. |
-| **7** | **Intelligence & Compliance** | `039`–`041` | Analytical views (margins, fast/slow stock, overdue ageing, mill shortage), E-Invoice/E-Way Bill Edge Function adapters, read-only tool-calling AI Assistant. |
-| **8** | **Commercial Launch** | `042`–`043` | `subscription_plans`, `business_subscriptions`, `has_module()` gating, billing webhooks, enterprise deployment & backup runbooks. |
+| **0** | **Architecture Blueprint** | *(None — this doc)* | Approved Rev 3 architecture sign-off. |
+| **1** | **Kala Core** | `011`–`014` | Cross-company isolation (multi-company user with 2 headers + missing header fail-closed), RBAC RPC enforcement, FY lock guard, idempotency payload-hash conflict test, existing QR URLs & buyer order requests regression tests. |
+| **2** | **Unified Inventory & Valuation** *(highest migration risk)* | `015`–`019` | Concurrent stock deduction race test, atomic 2-row transfer cost preservation, backdated posting block, taka split lineage integrity, 3-way `verify_inventory_integrity()` reconciliation, existing `intake_stock_tx`/`transfer_stock_tx` regression tests. |
+| **3** | **Accounting Engine** | `020`–`024` | Balanced voucher deferred trigger, posted-voucher immutability (rejects UPDATE/DELETE), single-reversal uniqueness guard, dual-locked concurrent bill allocation test, opening-balance & FY close guard tests. |
+| **4** | **Sales, Purchases & GST** | `025`–`030` | Duplicate invoice confirmation idempotency test, order-to-invoice no-double-deduction test, GST determination suite (intra/inter-state, SEZ, export, reverse charge, exempt, tax-inclusive, discount/freight, rate-change snapshot immutability). |
+| **5** | **Job Work & Manufacturing** | `031`–`035` | Mill-wise stock balance accuracy, shortage/elongation calculation, landed cost rollup into finished lots, BOM consumption & valuation reconciliation. |
+| **6** | **Financial Reports, Desktop & Mobile** | `036`–`038` | Trial Balance / P&L / Balance Sheet tie-out (`Assets = Liabilities + Equity + Net Profit`), GSTR-1/3B reconciliation, Tauri thermal print & `row_version` offline conflict tests. |
+| **7** | **Intelligence & Compliance** | `039`–`041` | Read-only AI RPC tenant isolation tests, E-Invoice / E-Way Bill Edge Function contract tests. |
+| **8** | **Commercial Launch** | `042`–`043` | Module gating (`has_module`) enforcement tests, backup/restore & multi-tenant load verification. |
