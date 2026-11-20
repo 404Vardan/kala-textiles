@@ -18,7 +18,7 @@ import {
   type TeamMember,
 } from '@/services/team'
 import type { UserRole } from '@/types'
-import { CheckCircle2, AlertCircle, Phone, Lock, Users, UserPlus, Trash2 } from 'lucide-react'
+import { CheckCircle2, AlertCircle, UserPlus, Trash2 } from 'lucide-react'
 
 interface SettingsDialogProps {
   open: boolean
@@ -36,7 +36,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [whatsappLoading, setWhatsappLoading] = useState(false)
   const [loadingSettings, setLoadingSettings] = useState(false)
 
-  // Team management state (Owner only)
   const [members, setMembers] = useState<TeamMember[]>([])
   const [loadingTeam, setLoadingTeam] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
@@ -72,9 +71,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         if (!active) return
         setWhatsapp(settings.whatsapp_number || '')
       })
-      .catch(() => {
-        // Non-blocking if settings haven't been initialized yet
-      })
+      .catch(() => {})
       .finally(() => {
         if (active) setLoadingSettings(false)
       })
@@ -201,22 +198,20 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[540px] max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-lg font-bold text-stone-900">
-            Business & Account Settings
-          </DialogTitle>
+          <DialogTitle>Business &amp; Account Settings</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-5 pt-1">
+        <div className="space-y-4 pt-1">
           {error && (
-            <div className="flex items-center gap-2 text-xs font-medium text-red-700 bg-red-50 border border-red-200 px-3.5 py-2.5 rounded-lg">
+            <div className="flex items-center gap-2 text-xs font-medium text-[#B42318] bg-white border border-[#B42318] px-3 py-2.5 rounded-[6px]">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
           {message && (
-            <div className="flex items-center gap-2 text-xs font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 rounded-lg">
-              <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+            <div className="flex items-center gap-2 text-xs font-medium text-[#1F7A4D] bg-white border border-[#1F7A4D] px-3 py-2.5 rounded-[6px]">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
               <span>{message}</span>
             </div>
           )}
@@ -224,21 +219,16 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           {/* Business WhatsApp Contact */}
           <form
             onSubmit={handleUpdateWhatsapp}
-            className="p-4 rounded-xl border border-stone-200/80 bg-stone-50/60 space-y-3"
+            className="p-4 rounded-[6px] border border-[#E3E5EA] bg-white space-y-3"
           >
-            <div className="flex items-start gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center shrink-0 mt-0.5">
-                <Phone className="w-4 h-4" />
-              </div>
-              <div>
-                <h3 className="font-bold text-sm text-stone-900">Business WhatsApp Contact</h3>
-                <p className="text-xs text-stone-500 mt-0.5 leading-relaxed">
-                  Used on buyer QR order review screens so customers can share their order request directly with your shop on WhatsApp.
-                </p>
-              </div>
+            <div>
+              <h3 className="font-semibold text-sm text-[#1A1D24]">Business WhatsApp Contact</h3>
+              <p className="text-xs text-[#667085] mt-0.5">
+                Used on buyer QR order review screens for direct WhatsApp sharing.
+              </p>
             </div>
 
-            <div className="space-y-1.5 pt-1">
+            <div className="space-y-1.5">
               <Label htmlFor="settings-whatsapp">WhatsApp Number (with country code)</Label>
               <div className="flex gap-2">
                 <Input
@@ -247,14 +237,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   value={whatsapp}
                   onChange={(e) => setWhatsapp(e.target.value)}
                   disabled={isBusy || loadingSettings}
-                  className="bg-white"
                 />
                 <Button
                   type="submit"
                   disabled={isBusy || loadingSettings || !whatsapp.trim()}
-                  className="bg-stone-900 hover:bg-stone-800 text-white shrink-0"
+                  className="shrink-0"
                 >
-                  {whatsappLoading ? 'Saving...' : 'Save Number'}
+                  {whatsappLoading ? 'Saving...' : 'Save'}
                 </Button>
               </div>
             </div>
@@ -262,20 +251,15 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
           {/* Team Management (Owner Only) */}
           {isOwner && (
-            <div className="p-4 rounded-xl border border-stone-200/80 bg-stone-50/60 space-y-4">
-              <div className="flex items-start gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-stone-100 border border-stone-200 text-stone-700 flex items-center justify-center shrink-0 mt-0.5">
-                  <Users className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-sm text-stone-900">Team Members</h3>
-                  <p className="text-xs text-stone-500 mt-0.5 leading-relaxed">
-                    Invite staff or co-owners by email and manage role access for your business.
-                  </p>
-                </div>
+            <div className="p-4 rounded-[6px] border border-[#E3E5EA] bg-white space-y-4">
+              <div>
+                <h3 className="font-semibold text-sm text-[#1A1D24]">Team Members</h3>
+                <p className="text-xs text-[#667085] mt-0.5">
+                  Invite staff or co-owners by email and manage business roles.
+                </p>
               </div>
 
-              <form onSubmit={handleInviteMember} className="space-y-2">
+              <form onSubmit={handleInviteMember} className="space-y-1.5">
                 <Label htmlFor="invite-email">Invite Team Member</Label>
                 <div className="flex flex-col sm:flex-row gap-2">
                   <Input
@@ -285,14 +269,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     value={inviteEmail}
                     onChange={(e) => setInviteEmail(e.target.value)}
                     disabled={isBusy}
-                    className="bg-white flex-1"
+                    className="flex-1"
                   />
                   <select
                     aria-label="Invite role"
                     value={inviteRole}
                     onChange={(e) => setInviteRole(e.target.value as UserRole)}
                     disabled={isBusy}
-                    className="bg-white border border-stone-200 rounded-lg px-2.5 py-2 text-xs font-medium text-stone-700"
+                    className="h-9 bg-white border border-[#E3E5EA] rounded-[6px] px-2.5 text-xs font-medium text-[#1A1D24]"
                   >
                     <option value="staff">Staff</option>
                     <option value="owner">Owner</option>
@@ -300,21 +284,21 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   <Button
                     type="submit"
                     disabled={isBusy || !inviteEmail.trim()}
-                    className="bg-stone-900 hover:bg-stone-800 text-white shrink-0"
+                    className="shrink-0"
                   >
-                    <UserPlus className="w-3.5 h-3.5 mr-1.5" />
-                    {inviting ? 'Inviting...' : 'Invite'}
+                    <UserPlus className="w-3.5 h-3.5" />
+                    <span>{inviting ? 'Inviting...' : 'Invite'}</span>
                   </Button>
                 </div>
               </form>
 
-              <div className="space-y-2 pt-1">
+              <div className="pt-1">
                 {loadingTeam ? (
-                  <p className="text-xs text-stone-500">Loading team members...</p>
+                  <p className="text-xs text-[#667085]">Loading team members...</p>
                 ) : members.length === 0 ? (
-                  <p className="text-xs text-stone-500">No team members found.</p>
+                  <p className="text-xs text-[#667085]">No team members found.</p>
                 ) : (
-                  <div className="divide-y divide-stone-200/80 rounded-lg border border-stone-200/80 bg-white overflow-hidden">
+                  <div className="divide-y divide-[#E3E5EA] rounded-[6px] border border-[#E3E5EA] overflow-hidden">
                     {members.map((m) => {
                       const isLastOwner = m.role === 'owner' && ownerCount <= 1
                       const isSelf = m.user_id === user?.id
@@ -323,19 +307,17 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                       return (
                         <div
                           key={m.user_id}
-                          className="flex items-center justify-between gap-2 px-3 py-2.5 text-xs"
+                          className="flex items-center justify-between gap-2 px-3 py-2.5 text-xs bg-white"
                         >
                           <div className="min-w-0">
-                            <p className="font-semibold text-stone-900 truncate">
+                            <p className="font-medium text-[#1A1D24] truncate">
                               {m.email || m.user_id}
                               {isSelf && (
-                                <span className="ml-1.5 text-[10px] font-semibold text-stone-500">
-                                  (You)
-                                </span>
+                                <span className="ml-1.5 text-[11px] text-[#667085]">(You)</span>
                               )}
                             </p>
                             {!m.email_confirmed_at && (
-                              <p className="text-[11px] text-amber-700">Invite pending</p>
+                              <p className="text-[11px] text-[#8A580F]">Invite pending</p>
                             )}
                           </div>
 
@@ -346,7 +328,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                               onChange={(e) => handleRoleChange(m, e.target.value as UserRole)}
                               disabled={isBusy || rowBusy || isLastOwner}
                               title={isLastOwner ? 'Cannot demote the last owner' : 'Change role'}
-                              className="bg-stone-50 border border-stone-200 rounded-md px-2 py-1 text-xs font-medium text-stone-700 disabled:opacity-50"
+                              className="h-8 bg-white border border-[#E3E5EA] rounded-[6px] px-2 text-xs font-medium text-[#1A1D24] disabled:opacity-50"
                             >
                               <option value="owner">Owner</option>
                               <option value="staff">Staff</option>
@@ -359,7 +341,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                               disabled={isBusy || rowBusy || isLastOwner}
                               title={isLastOwner ? 'Cannot remove the last owner' : 'Remove member'}
                               onClick={() => handleRemoveMember(m)}
-                              className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 disabled:opacity-40"
+                              className="h-8 w-8 p-0 text-[#B42318] disabled:opacity-40"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </Button>
@@ -376,18 +358,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           {/* Change Auth Password */}
           <form
             onSubmit={handleChangePassword}
-            className="p-4 rounded-xl border border-stone-200/80 bg-stone-50/60 space-y-3.5"
+            className="p-4 rounded-[6px] border border-[#E3E5EA] bg-white space-y-3"
           >
-            <div className="flex items-start gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-orange-50 border border-orange-200 text-orange-700 flex items-center justify-center shrink-0 mt-0.5">
-                <Lock className="w-4 h-4" />
-              </div>
-              <div>
-                <h3 className="font-bold text-sm text-stone-900">Update Account Password</h3>
-                <p className="text-xs text-stone-500 mt-0.5">
-                  Change the password for your currently signed-in account.
-                </p>
-              </div>
+            <div>
+              <h3 className="font-semibold text-sm text-[#1A1D24]">Update Account Password</h3>
+              <p className="text-xs text-[#667085] mt-0.5">
+                Change the password for your signed-in account.
+              </p>
             </div>
 
             <div className="space-y-1.5">
@@ -399,7 +376,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 disabled={isBusy}
-                className="bg-white"
               />
             </div>
 
@@ -412,7 +388,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 disabled={isBusy}
-                className="bg-white"
               />
             </div>
 
@@ -420,7 +395,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               <Button
                 type="submit"
                 disabled={isBusy || !newPassword || !confirmPassword}
-                className="bg-orange-700 hover:bg-orange-800 text-white"
               >
                 {passwordLoading ? 'Updating...' : 'Update Password'}
               </Button>
