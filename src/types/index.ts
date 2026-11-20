@@ -43,6 +43,9 @@ export interface FinancialYear {
 }
 
 // Product types
+export type TrackingMode = 'SET' | 'TAKA' | 'PIECE'
+export type InventoryUom = 'SET' | 'PCS' | 'MTR' | 'KG'
+
 export interface Product {
   id: number
   business_id?: number
@@ -54,6 +57,9 @@ export interface Product {
   pcs_per_set?: number
   total_set?: number
   total_pcs?: number
+  tracking_mode?: TrackingMode
+  uom?: InventoryUom
+  hsn_code?: string | null
   description?: string
   image_url?: string
   qr_code_url?: string
@@ -309,7 +315,190 @@ export interface InventoryStock {
   location_id: number
   sets: number
   total_pcs: number
+  reserved_sets?: number
+  avg_unit_cost?: number
+  row_version?: number
   updated_at: string
+}
+
+// Stage 2: Variants, Lots, Serialized Takas, Unified Stock Ledger & 3-Way Reconciliation
+export type TakaStatus =
+  | 'in_stock'
+  | 'reserved'
+  | 'in_process'
+  | 'split'
+  | 'dispatched'
+  | 'consumed'
+  | 'damaged'
+
+export type StockLedgerMovementType =
+  | 'OPENING_BALANCE'
+  | 'INTAKE'
+  | 'PURCHASE_IN'
+  | 'TRANSFER_OUT'
+  | 'TRANSFER_IN'
+  | 'DISPATCH'
+  | 'RETURN_IN'
+  | 'RETURN_OUT'
+  | 'JOB_OUT'
+  | 'JOB_IN'
+  | 'SPLIT_OUT'
+  | 'SPLIT_IN'
+  | 'PRODUCTION_CONSUME'
+  | 'PRODUCTION_OUT'
+  | 'ADJUSTMENT'
+
+export interface ProductVariant {
+  id: number
+  business_id: number
+  product_id: number
+  sku: string
+  color_name?: string | null
+  color_code?: string | null
+  size_label?: string | null
+  rate_override?: number | null
+  is_active: boolean
+  row_version: number
+  created_at: string
+  updated_at: string
+}
+
+export interface InventoryLot {
+  id: number
+  business_id: number
+  branch_id: number
+  product_id: number
+  variant_id?: number | null
+  lot_no: string
+  supplier_party_id?: number | null
+  mill_party_id?: number | null
+  shade_no?: string | null
+  gsm?: number | null
+  width_inches?: number | null
+  landed_cost_per_unit: number
+  received_date: string
+  notes?: string | null
+  row_version: number
+  created_at: string
+  updated_at: string
+}
+
+export interface InventoryTaka {
+  id: number
+  business_id: number
+  branch_id: number
+  lot_id: number
+  parent_taka_id?: number | null
+  product_id: number
+  variant_id?: number | null
+  location_id: number
+  taka_no: string
+  barcode_value?: string | null
+  initial_meters: number
+  current_meters: number
+  weight_kg?: number | null
+  status: TakaStatus
+  row_version: number
+  created_at: string
+  updated_at: string
+}
+
+export interface TakaSplit {
+  id: number
+  business_id: number
+  parent_taka_id: number
+  child_taka_id: number
+  meters_allocated: number
+  transaction_group_id: string
+  created_by: string
+  created_at: string
+}
+
+export interface StockLedgerEntry {
+  id: number
+  business_id: number
+  branch_id: number
+  fy_id: number
+  transaction_group_id: string
+  reversal_of_id?: number | null
+  product_id: number
+  variant_id?: number | null
+  lot_id?: number | null
+  taka_id?: number | null
+  location_id: number
+  movement_type: StockLedgerMovementType
+  movement_date: string
+  qty_delta: number
+  pcs_delta: number
+  uom: InventoryUom
+  unit_cost: number
+  value_delta: number
+  ref_doc_type: string
+  ref_doc_id?: number | null
+  source_document_line_id?: number | null
+  idempotency_key?: string | null
+  created_by?: string | null
+  posted_at: string
+  notes?: string | null
+}
+
+export interface IntakeSetStockV2Result {
+  success: boolean
+  transaction_group_id: string
+  product_id: number
+  location_id: number
+  pcs_per_set: number
+  sets: number
+  total_pcs: number
+  avg_unit_cost: number
+  reference_no: string
+}
+
+export interface ReceiveTakaLotItemInput {
+  taka_no: string
+  meters: number
+  weight_kg?: number | null
+}
+
+export interface ReceiveTakaLotResult {
+  success: boolean
+  transaction_group_id: string
+  lot_id: number
+  lot_no: string
+  taka_count: number
+  total_meters: number
+  taka_ids: number[]
+}
+
+export interface TransferTakaResult {
+  success: boolean
+  transaction_group_id: string
+  taka_id: number
+  from_location_id: number
+  to_location_id: number
+  meters: number
+  unit_cost: number
+}
+
+export interface SplitTakaItemInput {
+  taka_no: string
+  meters: number
+}
+
+export interface SplitTakaResult {
+  success: boolean
+  transaction_group_id: string
+  parent_taka_id: number
+  child_taka_ids: number[]
+}
+
+export interface InventoryIntegrityReport {
+  balanced: boolean
+  set_mismatches: number
+  taka_mismatches: number
+  ledger_value: number
+  projection_value: number
+  value_diff: number
 }
 
 export type MovementType = 'INTAKE' | 'TRANSFER' | 'DISPATCH' | 'ADJUSTMENT'
