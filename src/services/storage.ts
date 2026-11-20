@@ -1,61 +1,100 @@
 import supabase from './supabase'
 
-let bucketReady = false
+const PRODUCT_MEDIA_BUCKET = 'product-media'
 
-async function ensureBucket() {
-  if (bucketReady) return
-  try {
-    // Try to get the bucket first
-    const { error: getError } = await supabase.storage.getBucket('product-media')
-    if (getError) {
-      // Bucket doesn't exist, create it
-      await supabase.storage.createBucket('product-media', { public: true })
-    }
-    bucketReady = true
-  } catch {
-    // Ignore — bucket might already exist
-    bucketReady = true
+function generateFileUuid(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
   }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`
 }
 
-export async function uploadProductMedia(productId: number, file: File): Promise<string> {
-  await ensureBucket()
+function resolveFileExtension(file: File): string {
+  const nameParts = file.name.split('.')
+  if (nameParts.length > 1) {
+    const ext = nameParts.pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || ''
+    if (ext && ext.length <= 10) {
+      return ext
+    }
+  }
 
-  const fileExt = file.name.split('.').pop()
-  const filename = `${productId}/${Date.now()}.${fileExt}`
+  const mimeSubtype = file.type.split('/')[1]?.toLowerCase().replace(/[^a-z0-9]/g, '') || ''
+  if (mimeSubtype === 'jpeg') return 'jpg'
+  if (mimeSubtype && mimeSubtype.length <= 10) return mimeSubtype
+
+  return 'bin'
+}
+
+/**
+ * Uploads product media to tenant-scoped storage path:
+ * `{business_id}/{product_id}/{uuid}.{ext}`
+ */
+export async function uploadProductMedia(
+  businessId: number,
+  productId: number,
+  file: File
+): Promise<string> {
+  if (!Number.isInteger(businessId) || businessId <= 0) {
+    throw new Error('Valid business_id is required to upload product media.')
+  }
+  if (!Number.isInteger(productId) || productId <= 0) {
+    throw new Error('Valid product_id is required to upload product media.')
+  }
+
+  const ext = resolveFileExtension(file)
+  const uuid = generateFileUuid()
+  const objectPath = `${businessId}/${productId}/${uuid}.${ext}`
 
   const { data, error: uploadError } = await supabase.storage
-    .from('product-media')
-    .upload(filename, file)
+    .from(PRODUCT_MEDIA_BUCKET)
+    .upload(objectPath, file, {
+      upsert: false,
+      contentType: file.type || undefined,
+    })
 
   if (uploadError) throw uploadError
 
   const { data: publicUrlData } = supabase.storage
-    .from('product-media')
+    .from(PRODUCT_MEDIA_BUCKET)
     .getPublicUrl(data.path)
 
   return publicUrlData.publicUrl
 }
 
-export async function deleteMediaFile(path: string) {
+export async function deleteMediaFile(pathOrUrl: string): Promise<void> {
+  const objectPath = getPathFromUrl(pathOrUrl)
+  if (!objectPath) return
+
   const { error } = await supabase.storage
-    .from('product-media')
-    .remove([path])
+    .from(PRODUCT_MEDIA_BUCKET)
+    .remove([objectPath])
 
   if (error) throw error
 }
 
-// Extract file path from public URL
+/**
+ * Extracts the storage object path (e.g. `{business_id}/{product_id}/{uuid}.{ext}`)
+ * from a Supabase Storage URL or returns an already-relative object path.
+ */
 export function getPathFromUrl(url: string): string {
+  const raw = (url || '').trim()
+  if (!raw) return ''
+
   try {
-    const urlObj = new URL(url)
-    const parts = urlObj.pathname.split('/')
-    const bucketIndex = parts.indexOf('product-media')
-    if (bucketIndex !== -1) {
-      return parts.slice(bucketIndex + 1).join('/')
+    const urlObj = new URL(raw)
+    const segments = urlObj.pathname.split('/').filter(Boolean)
+    const bucketIndex = segments.indexOf(PRODUCT_MEDIA_BUCKET)
+    if (bucketIndex !== -1 && bucketIndex + 1 < segments.length) {
+      return segments
+        .slice(bucketIndex + 1)
+        .map((seg) => decodeURIComponent(seg))
+        .join('/')
     }
-    return url
+    return ''
   } catch {
-    return url
+    // Already a relative storage path (strip query/hash and leading slashes)
+    const clean = raw.split(/[?#]/)[0].replace(/^\/+/, '')
+    const prefix = `${PRODUCT_MEDIA_BUCKET}/`
+    return clean.startsWith(prefix) ? clean.slice(prefix.length) : clean
   }
 }

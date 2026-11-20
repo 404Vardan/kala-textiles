@@ -273,7 +273,11 @@ export default function ProductTab() {
         for (let i = 0; i < stagedFiles.length; i++) {
           const item = stagedFiles[i]
           try {
-            const mediaUrl = await uploadProductMedia(savedProduct.id, item.file)
+            const targetBusinessId = savedProduct.business_id ?? business?.id
+            if (!targetBusinessId) {
+              throw new Error('Unable to determine active business for media upload.')
+            }
+            const mediaUrl = await uploadProductMedia(targetBusinessId, savedProduct.id, item.file)
             await createProductMedia(savedProduct.id, mediaUrl, item.type, i)
             if (item.isPrimary || (!primaryUrl && item.type === 'image')) {
               primaryUrl = mediaUrl

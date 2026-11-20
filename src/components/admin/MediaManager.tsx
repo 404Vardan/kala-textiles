@@ -8,6 +8,7 @@ import {
 import { fetchProductMedia, createProductMedia, deleteProductMedia, updateMediaOrderBatch } from '@/services/products'
 import { uploadProductMedia, deleteMediaFile, getPathFromUrl } from '@/services/storage'
 import { updateProduct } from '@/services/products'
+import { useAuth } from '@/contexts/AuthContext'
 import type { Product, ProductMedia } from '@/types'
 import { Upload, X, Trash2, GripVertical, ImagePlus, Film, Check } from 'lucide-react'
 
@@ -27,6 +28,7 @@ interface UploadingFile {
 }
 
 export default function MediaManager({ product, open, onOpenChange }: MediaManagerProps) {
+  const { business } = useAuth()
   const [media, setMedia] = useState<ProductMedia[]>([])
   const [uploading, setUploading] = useState<UploadingFile[]>([])
   const [isDragging, setIsDragging] = useState(false)
@@ -87,7 +89,11 @@ export default function MediaManager({ product, open, onOpenChange }: MediaManag
           u.id === upload.id ? { ...u, status: 'uploading' as const, progress: 30 } : u
         ))
 
-        const mediaUrl = await uploadProductMedia(product.id, upload.file)
+        const targetBusinessId = product.business_id ?? business?.id
+        if (!targetBusinessId) {
+          throw new Error('Unable to determine active business for media upload.')
+        }
+        const mediaUrl = await uploadProductMedia(targetBusinessId, product.id, upload.file)
 
         setUploading(prev => prev.map(u =>
           u.id === upload.id ? { ...u, progress: 70 } : u
@@ -119,7 +125,7 @@ export default function MediaManager({ product, open, onOpenChange }: MediaManag
         }
       }
     }, 500)
-  }, [product, media.length])
+  }, [product, business?.id, media.length])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
