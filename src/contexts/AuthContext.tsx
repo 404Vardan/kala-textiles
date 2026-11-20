@@ -17,6 +17,7 @@ interface AuthContextType {
   membershipError: string | null
   loading: boolean
   signIn: (email: string, pass: string) => Promise<{ error: Error | null; role?: UserRole | null }>
+  signUp: (email: string, pass: string) => Promise<{ error: Error | null; needsEmailConfirmation: boolean }>
   signOut: () => Promise<void>
   refreshMembership: () => Promise<void>
 }
@@ -193,6 +194,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: null, role: resolvedRole }
   }
 
+  const signUp = async (email: string, pass: string) => {
+    setLoading(true)
+    const { data, error } = await supabase.auth.signUp({
+      email: email.trim(),
+      password: pass,
+    })
+
+    if (error) {
+      if (mountedRef.current) {
+        setLoading(false)
+      }
+      return { error: new Error(error.message), needsEmailConfirmation: false }
+    }
+
+    const needsEmailConfirmation = Boolean(data.user && !data.session)
+
+    if (data.session && data.user && mountedRef.current) {
+      setSession(data.session)
+      setUser(data.user)
+      await loadMembership(data.user.id)
+    }
+
+    if (mountedRef.current) {
+      setLoading(false)
+    }
+
+    return { error: null, needsEmailConfirmation }
+  }
+
   const signOut = async () => {
     requestIdRef.current += 1
     inFlightRef.current = null
@@ -234,6 +264,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         membershipError,
         loading,
         signIn,
+        signUp,
         signOut,
         refreshMembership,
       }}

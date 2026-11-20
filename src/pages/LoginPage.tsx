@@ -43,8 +43,10 @@ export default function LoginPage() {
         navigate(returnUrl)
       } else if (resolvedRole === 'owner' || isOwner) {
         navigate('/admin')
-      } else {
+      } else if (resolvedRole === 'staff') {
         navigate('/staff')
+      } else {
+        navigate('/signup')
       }
     } catch (err: any) {
       setError(err?.message || 'Authentication failed. Please try again.')
@@ -132,11 +134,19 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <div className="mt-6 pt-4 border-t border-stone-100 flex items-center justify-between text-[11px] text-stone-500">
-            <span className="flex items-center gap-1.5 font-medium">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-700" />
-              Protected by Supabase Auth & Tenant RLS
-            </span>
+          <div className="mt-6 pt-4 border-t border-stone-100 space-y-3 text-xs text-stone-500">
+            <div className="text-center">
+              New to Kala?{' '}
+              <Link to="/signup" className="font-semibold text-orange-700 hover:text-orange-800 hover:underline">
+                Create your shop
+              </Link>
+            </div>
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="flex items-center gap-1.5 font-medium">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-700" />
+                Protected by Supabase Auth & Tenant RLS
+              </span>
+            </div>
           </div>
         </div>
       </div>
