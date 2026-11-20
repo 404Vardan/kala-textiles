@@ -55,7 +55,6 @@ import {
   Camera,
   Ban,
   ClipboardList,
-  ShoppingCart,
 } from 'lucide-react'
 
 interface OrderItemDraft {
@@ -71,12 +70,14 @@ interface OrderItemDraft {
 
 interface OrderTabProps {
   isStaff?: boolean
+  hideRequestsSection?: boolean
   autoOpenDraft?: boolean
   onAutoOpenDraftHandled?: () => void
 }
 
 export default function OrderTab({
   isStaff = false,
+  hideRequestsSection = false,
   autoOpenDraft = false,
   onAutoOpenDraftHandled,
 }: OrderTabProps) {
@@ -105,17 +106,14 @@ export default function OrderTab({
   const [confirmLoading, setConfirmLoading] = useState(false)
   const [feedbackBanner, setFeedbackBanner] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
-  // Filters
   const [statusFilter, setStatusFilter] = useState<'all' | OrderStatus>('all')
   const [searchQuery, setSearchQuery] = useState('')
 
-  // Directories & Products Cache
   const [products, setProducts] = useState<Product[]>([])
   const [parties, setParties] = useState<Party[]>([])
   const [agents, setAgents] = useState<Agent[]>([])
   const [locations, setLocations] = useState<InventoryLocation[]>([])
 
-  // Form fields (when editingOrder is null, synchronized with sharedDraft)
   const [partyName, setPartyName] = useState('')
   const [station, setStation] = useState('')
   const [agent, setAgent] = useState('')
@@ -129,13 +127,11 @@ export default function OrderTab({
   const [formLoading, setFormLoading] = useState(false)
   const [formError, setFormError] = useState('')
 
-  // Autocomplete suggestions
   const [partySuggestions, setPartySuggestions] = useState<Party[]>([])
   const [agentSuggestions, setAgentSuggestions] = useState<Agent[]>([])
   const [showPartySuggestions, setShowPartySuggestions] = useState(false)
   const [showAgentSuggestions, setShowAgentSuggestions] = useState(false)
 
-  // Item entry
   const [itemSearch, setItemSearch] = useState('')
   const [searchResults, setSearchResults] = useState<Product[]>([])
   const [showScanner, setShowScanner] = useState(false)
@@ -145,7 +141,6 @@ export default function OrderTab({
     loadAuxiliaryData()
   }, [])
 
-  // Keep New Order modal state synchronized with shared staff draft when not editing an existing DB order
   useEffect(() => {
     if (editingOrder) return
     setPartyName(sharedDraft.partyName)
@@ -178,7 +173,6 @@ export default function OrderTab({
     )
   }, [sharedDraft, editingOrder, products])
 
-  // Auto-open draft order form when navigated with ?openDraft=1 or autoOpenDraft prop
   useEffect(() => {
     const openDraftParam = searchParams.get('openDraft')
     if (openDraftParam === '1' || autoOpenDraft) {
@@ -219,7 +213,6 @@ export default function OrderTab({
       setAgents(ags)
       setLocations(locs)
 
-      // Default stock deduction to Shop location
       const shopLoc = locs.find((l) => l.name.toLowerCase() === 'shop')
       if (shopLoc) setDeductLocationId(String(shopLoc.id))
       else if (locs.length > 0) setDeductLocationId(String(locs[0].id))
@@ -250,13 +243,12 @@ export default function OrderTab({
     [editingOrder, setSharedItems]
   )
 
-  // Handle party name typing & autocomplete
   const handlePartyChange = (value: string) => {
     setPartyName(value)
     if (!editingOrder) updateSharedHeader({ partyName: value })
-    if (value.trim().length > 1) {
+    if (value.trim().length > 0) {
       const q = value.toLowerCase()
-      const matches = parties.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 5)
+      const matches = parties.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 6)
       setPartySuggestions(matches)
       setShowPartySuggestions(matches.length > 0)
     } else {
@@ -280,13 +272,12 @@ export default function OrderTab({
     setShowPartySuggestions(false)
   }
 
-  // Handle agent typing & autocomplete
   const handleAgentChange = (value: string) => {
     setAgent(value)
     if (!editingOrder) updateSharedHeader({ agent: value })
-    if (value.trim().length > 1) {
+    if (value.trim().length > 0) {
       const q = value.toLowerCase()
-      const matches = agents.filter((a) => a.name.toLowerCase().includes(q)).slice(0, 5)
+      const matches = agents.filter((a) => a.name.toLowerCase().includes(q)).slice(0, 6)
       setAgentSuggestions(matches)
       setShowAgentSuggestions(matches.length > 0)
     } else {
@@ -300,7 +291,6 @@ export default function OrderTab({
     setShowAgentSuggestions(false)
   }
 
-  // Item search
   const handleSearchItem = (query: string) => {
     setItemSearch(query)
     if (query.trim()) {
@@ -361,7 +351,6 @@ export default function OrderTab({
     [editingOrder, addProductToSharedDraft]
   )
 
-  // QR Scanner hook with shared parser & tenant validation
   const handleQRScan = useCallback(
     async (text: string) => {
       const parsed = parseProductQRUrl(text, activeSlug)
@@ -528,7 +517,6 @@ export default function OrderTab({
     setFormError('')
 
     try {
-      // Auto-register party and agent in master directories
       await findOrCreateParty(partyName, station, gstNumber).catch(() => {})
       if (agent.trim()) await findOrCreateAgent(agent, station).catch(() => {})
 
@@ -593,7 +581,6 @@ export default function OrderTab({
             order_id: 0,
           }))
         )
-        // Clear shared staff draft once saved to the database
         clearSharedDraft()
         setFeedbackBanner({
           type: 'success',
@@ -612,7 +599,6 @@ export default function OrderTab({
     }
   }
 
-  // Confirm order & trigger stock deduction
   const handleExecuteConfirmation = async () => {
     if (!confirmModalOrder) return
     setConfirmLoading(true)
@@ -630,7 +616,7 @@ export default function OrderTab({
       setConfirmModalOrder(null)
       setFeedbackBanner({
         type: 'success',
-        text: `Order ${confirmedNo} confirmed and stock inventory deducted.`,
+        text: `Order ${confirmedNo} confirmed and stock deducted.`,
       })
     } catch (err: any) {
       setFeedbackBanner({
@@ -694,7 +680,6 @@ export default function OrderTab({
     }
   }
 
-  // Filtered orders list
   const filteredOrders = orders.filter((o) => {
     if (statusFilter !== 'all' && o.status !== statusFilter) return false
     if (!searchQuery.trim()) return true
@@ -708,10 +693,12 @@ export default function OrderTab({
     )
   })
 
+  const touchClass = isStaff ? 'min-h-[44px]' : ''
+
   return (
-    <div className="space-y-6">
-      {/* Owner-only Buyer QR Order Requests Section */}
-      {!isStaff && (
+    <div className="space-y-4">
+      {/* Optional inline Requests section when not shown on dedicated Requests tab */}
+      {!isStaff && !hideRequestsSection && (
         <OrderRequestsSection
           onOrderConverted={async () => {
             await loadOrders()
@@ -722,186 +709,172 @@ export default function OrderTab({
 
       {feedbackBanner && (
         <div
-          className={`flex items-center justify-between gap-2 px-4 py-3 rounded-xl border text-xs font-medium ${
+          className={`flex items-center justify-between gap-2 px-4 py-3 rounded-[6px] border bg-white text-xs font-medium ${
             feedbackBanner.type === 'success'
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-              : 'bg-red-50 border-red-200 text-red-700'
+              ? 'border-[#1F7A4D] text-[#1F7A4D]'
+              : 'border-[#B42318] text-[#B42318]'
           }`}
         >
           <div className="flex items-center gap-2">
             {feedbackBanner.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
             ) : (
-              <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+              <AlertCircle className="w-4 h-4 shrink-0" />
             )}
             <span>{feedbackBanner.text}</span>
           </div>
           <button
             type="button"
             onClick={() => setFeedbackBanner(null)}
-            className="font-semibold hover:underline"
+            className="font-semibold underline cursor-pointer"
           >
             Dismiss
           </button>
         </div>
       )}
 
-      {/* Top action and filter bar */}
-      <div className="bg-white p-4 rounded-xl border border-stone-200/80 shadow-2xs space-y-4">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+      {/* Search, Filter & Primary Action Toolbar */}
+      <div className="bg-white p-4 rounded-[6px] border border-[#E3E5EA] space-y-3">
+        <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
           <div className="relative w-full sm:w-80">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#667085]" />
             <Input
               aria-label="Search orders"
-              placeholder="Search by order #, party, station, agent..."
+              placeholder="Search order no, party, station, agent..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 bg-stone-50/70"
+              className={`pl-9 ${touchClass}`}
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <div className="flex flex-wrap items-center gap-2">
             {sharedDraftDesigns > 0 && (
               <Button
                 type="button"
+                variant="outline"
                 onClick={openCreateForm}
-                className="bg-orange-700 hover:bg-orange-800 text-white shrink-0 gap-1.5 flex-1 sm:flex-initial"
+                className={`flex-1 sm:flex-initial ${touchClass}`}
               >
                 <ClipboardList className="w-4 h-4" />
-                <span>
-                  Resume Draft ({sharedDraftDesigns}{' '}
-                  {sharedDraftDesigns === 1 ? 'Design' : 'Designs'} · {sharedDraftSets}{' '}
-                  {sharedDraftSets === 1 ? 'Set' : 'Sets'})
+                <span className="tabular-nums">
+                  Resume Draft ({sharedDraftDesigns} · {sharedDraftSets} sets)
                 </span>
               </Button>
             )}
             <Button
               onClick={openCreateForm}
-              className="bg-stone-900 hover:bg-stone-800 text-white shrink-0 flex-1 sm:flex-initial"
+              className={`flex-1 sm:flex-initial ${touchClass}`}
             >
-              <Plus className="w-4 h-4 mr-1.5" /> Create New Order
+              <Plus className="w-4 h-4" />
+              <span>New Order</span>
             </Button>
           </div>
         </div>
 
-        {/* Status filters */}
-        <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-stone-100 text-xs">
-          <span className="font-semibold text-stone-500 uppercase tracking-wider mr-1">
-            Order Status:
-          </span>
-          <button
-            type="button"
-            onClick={() => setStatusFilter('all')}
-            className={`px-3 py-1 rounded-md font-semibold transition-colors ${
-              statusFilter === 'all'
-                ? 'bg-stone-900 text-white'
-                : 'bg-stone-100 text-stone-600 hover:bg-stone-200/70'
-            }`}
-          >
-            All Orders ({orders.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setStatusFilter('draft')}
-            className={`px-3 py-1 rounded-md font-semibold transition-colors ${
-              statusFilter === 'draft'
-                ? 'bg-amber-700 text-white'
-                : 'bg-amber-50 text-amber-800 border border-amber-200/70 hover:bg-amber-100'
-            }`}
-          >
-            Drafts ({orders.filter((o) => !o.status || o.status === 'draft').length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setStatusFilter('confirmed')}
-            className={`px-3 py-1 rounded-md font-semibold transition-colors ${
-              statusFilter === 'confirmed'
-                ? 'bg-emerald-700 text-white'
-                : 'bg-emerald-50 text-emerald-800 border border-emerald-200/70 hover:bg-emerald-100'
-            }`}
-          >
-            Confirmed ({orders.filter((o) => o.status === 'confirmed').length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setStatusFilter('cancelled')}
-            className={`px-3 py-1 rounded-md font-semibold transition-colors ${
-              statusFilter === 'cancelled'
-                ? 'bg-red-700 text-white'
-                : 'bg-red-50 text-red-700 border border-red-200/70 hover:bg-red-100'
-            }`}
-          >
-            Cancelled ({orders.filter((o) => o.status === 'cancelled').length})
-          </button>
+        {/* Status Filter Bar */}
+        <div className="flex flex-wrap items-center gap-1.5 pt-3 border-t border-[#E3E5EA] text-xs">
+          {(
+            [
+              { key: 'all', label: `All (${orders.length})` },
+              {
+                key: 'draft',
+                label: `Draft (${orders.filter((o) => !o.status || o.status === 'draft').length})`,
+              },
+              {
+                key: 'confirmed',
+                label: `Confirmed (${orders.filter((o) => o.status === 'confirmed').length})`,
+              },
+              {
+                key: 'cancelled',
+                label: `Cancelled (${orders.filter((o) => o.status === 'cancelled').length})`,
+              },
+            ] as const
+          ).map((f) => (
+            <button
+              key={f.key}
+              type="button"
+              onClick={() => setStatusFilter(f.key)}
+              className={`px-3 py-1.5 rounded-[6px] font-medium border transition-colors cursor-pointer tabular-nums ${
+                isStaff ? 'min-h-[44px]' : ''
+              } ${
+                statusFilter === f.key
+                  ? 'bg-[#1E2A4A] text-white border-[#1E2A4A]'
+                  : 'bg-white text-[#1A1D24] border-[#E3E5EA] hover:bg-[#F4F5F7]'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Orders Table */}
-      <div className="bg-white border border-stone-200/80 rounded-xl overflow-hidden shadow-2xs">
+      {/* Orders List Table */}
+      <div className="bg-white border border-[#E3E5EA] rounded-[6px] overflow-hidden">
         {loading ? (
           <LoadingState message="Loading wholesale orders..." />
         ) : filteredOrders.length === 0 ? (
           <EmptyState
-            icon={<ShoppingCart className="w-6 h-6" />}
-            title="No wholesale orders found"
-            description='Click "Create New Order" or convert a Buyer QR Request above to start.'
+            title="No wholesale orders found."
             action={
-              <Button onClick={openCreateForm} size="sm">
-                <Plus className="w-4 h-4 mr-1.5" /> Create Wholesale Order
+              <Button onClick={openCreateForm} size="sm" className={touchClass}>
+                <Plus className="w-3.5 h-3.5" />
+                <span>New Order</span>
               </Button>
             }
           />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-stone-50 border-b border-stone-200/80 text-stone-600 text-[11px] font-semibold uppercase tracking-wider">
+              <thead className="bg-[#F4F5F7] border-b border-[#E3E5EA] text-[#667085] text-xs font-medium">
                 <tr>
-                  <th className="px-4 py-3 text-left">Order No</th>
-                  <th className="px-4 py-3 text-left">Party Details</th>
-                  <th className="px-4 py-3 text-left">Station & Agent</th>
-                  <th className="px-4 py-3 text-left">Date</th>
-                  <th className="px-4 py-3 text-right">Amount</th>
-                  <th className="px-4 py-3 text-center">Status</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+                  <th className="px-4 py-2.5 text-left">Order No</th>
+                  <th className="px-4 py-2.5 text-left">Party</th>
+                  <th className="px-4 py-2.5 text-left">Station / Agent</th>
+                  <th className="px-4 py-2.5 text-left">Date</th>
+                  <th className="px-4 py-2.5 text-right">Amount</th>
+                  <th className="px-4 py-2.5 text-left">Status</th>
+                  <th className="px-4 py-2.5 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-stone-100">
+              <tbody className="divide-y divide-[#E3E5EA]">
                 {filteredOrders.map((ord) => (
-                  <tr key={ord.id} className="hover:bg-stone-50/70 transition-colors">
-                    <td className="px-4 py-3">
+                  <tr key={ord.id} className="hover:bg-[#F4F5F7]/60">
+                    <td className="px-4 py-2.5 whitespace-nowrap">
                       <a
                         href={`/${activeSlug}/order/${encodeURIComponent(ord.order_no)}`}
-                        className="font-mono font-bold text-orange-700 hover:text-orange-800 hover:underline block"
+                        className="font-mono text-xs font-semibold text-[#1E2A4A] hover:underline"
                       >
                         {ord.order_no}
                       </a>
                     </td>
-                    <td className="px-4 py-3">
-                      <p className="font-bold text-stone-900">{ord.party_name}</p>
+                    <td className="px-4 py-2.5">
+                      <div className="font-medium text-[#1A1D24]">{ord.party_name}</div>
                       {ord.gst_number && (
-                        <p className="font-mono text-xs text-stone-500 mt-0.5">{ord.gst_number}</p>
+                        <div className="font-mono text-xs text-[#667085]">{ord.gst_number}</div>
                       )}
                     </td>
-                    <td className="px-4 py-3">
-                      <p className="text-stone-800 font-medium">{ord.station || '—'}</p>
-                      {ord.agent && <p className="text-xs text-stone-500">Ag: {ord.agent}</p>}
+                    <td className="px-4 py-2.5">
+                      <div className="text-xs text-[#1A1D24]">{ord.station || '—'}</div>
+                      {ord.agent && <div className="text-xs text-[#667085]">{ord.agent}</div>}
                     </td>
-                    <td className="px-4 py-3 text-stone-600 text-xs whitespace-nowrap">
+                    <td className="px-4 py-2.5 text-xs text-[#667085] whitespace-nowrap tabular-nums">
                       {formatDate(ord.order_date || ord.created_at)}
                     </td>
-                    <td className="px-4 py-3 text-right font-bold text-stone-900 tabular-nums">
+                    <td className="px-4 py-2.5 text-right font-semibold text-[#1A1D24] tabular-nums whitespace-nowrap">
                       {formatCurrency(ord.total_amount)}
                     </td>
-                    <td className="px-4 py-3 text-center">
+                    <td className="px-4 py-2.5 whitespace-nowrap">
                       <StatusBadge status={ord.status || 'draft'} />
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
+                    <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                      <div className="inline-flex items-center gap-1">
                         {ord.status !== 'confirmed' && ord.status !== 'cancelled' && (
                           <Button
                             size="sm"
                             onClick={() => setConfirmModalOrder(ord)}
-                            className="h-8 px-2.5 text-xs bg-emerald-700 hover:bg-emerald-800 text-white font-semibold"
+                            className={`h-8 px-2.5 text-xs bg-[#1F7A4D] hover:bg-[#17603C] text-white ${
+                              isStaff ? 'min-h-[44px] px-3' : ''
+                            }`}
                           >
                             Confirm
                           </Button>
@@ -911,7 +884,7 @@ export default function OrderTab({
                           size="sm"
                           title="Download Order PDF"
                           onClick={() => handleDownloadPdf(ord)}
-                          className="h-8 w-8 p-0 text-orange-700 hover:text-orange-800 hover:bg-orange-50"
+                          className={`p-0 text-[#1E2A4A] ${isStaff ? 'min-h-[44px] min-w-[44px]' : 'h-8 w-8'}`}
                         >
                           <Download className="w-4 h-4" />
                         </Button>
@@ -920,7 +893,9 @@ export default function OrderTab({
                           size="sm"
                           title="Duplicate Order"
                           onClick={() => handleDuplicate(ord)}
-                          className="h-8 w-8 p-0 text-stone-600 hover:text-stone-900"
+                          className={`p-0 text-[#667085] hover:text-[#1A1D24] ${
+                            isStaff ? 'min-h-[44px] min-w-[44px]' : 'h-8 w-8'
+                          }`}
                         >
                           <Copy className="w-4 h-4" />
                         </Button>
@@ -930,7 +905,7 @@ export default function OrderTab({
                             size="sm"
                             title="Edit Order"
                             onClick={() => openEditForm(ord)}
-                            className="h-8 w-8 p-0 text-stone-600 hover:text-stone-900"
+                            className="h-8 w-8 p-0 text-[#667085] hover:text-[#1A1D24]"
                           >
                             <Edit2 className="w-4 h-4" />
                           </Button>
@@ -941,7 +916,7 @@ export default function OrderTab({
                             size="sm"
                             title="Cancel Order"
                             onClick={() => handleCancelOrder(ord.id)}
-                            className="h-8 w-8 p-0 text-stone-500 hover:text-red-700 hover:bg-red-50"
+                            className="h-8 w-8 p-0 text-[#667085] hover:text-[#B42318]"
                           >
                             <Ban className="w-4 h-4" />
                           </Button>
@@ -952,7 +927,7 @@ export default function OrderTab({
                             size="sm"
                             title="Delete Order"
                             onClick={() => setDeleteConfirm(ord.id)}
-                            className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                            className="h-8 w-8 p-0 text-[#B42318]"
                           >
                             <Trash2 className="w-4 h-4" />
                           </Button>
@@ -967,7 +942,7 @@ export default function OrderTab({
         )}
       </div>
 
-      {/* Create / Edit Order Modal */}
+      {/* New Order / Edit Order Modal with Pinned Totals Bar */}
       <Dialog
         open={showForm}
         onOpenChange={(open) => {
@@ -978,42 +953,48 @@ export default function OrderTab({
           }
         }}
       >
-        <DialogContent className="sm:max-w-[780px] max-h-[92vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-bold text-stone-900">
-              {editingOrder ? `Edit Order — ${editingOrder.order_no}` : 'Create Wholesale Order'}
+        <DialogContent className="sm:max-w-[820px] max-h-[92vh] p-0 flex flex-col gap-0 overflow-hidden">
+          <DialogHeader className="px-5 py-4 border-b border-[#E3E5EA] bg-white shrink-0">
+            <DialogTitle>
+              {editingOrder ? `Edit Order — ${editingOrder.order_no}` : 'New Order'}
             </DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-4 pt-2">
+          {/* Scrollable Body */}
+          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 bg-[#F4F5F7]">
             {formError && (
-              <p className="text-xs font-semibold text-red-700 bg-red-50 p-2.5 rounded-lg border border-red-200">
+              <p className="text-xs font-medium text-[#B42318] bg-white p-3 rounded-[6px] border border-[#B42318]">
                 {formError}
               </p>
             )}
 
-            {/* Header / Party Details */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 bg-stone-50 p-4 rounded-xl border border-stone-200/80">
+            {/* Party & Agent Pickers */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 bg-white p-4 rounded-[6px] border border-[#E3E5EA]">
               <div className="space-y-1.5 relative">
                 <Label htmlFor="order-party-name">Party Name *</Label>
                 <Input
                   id="order-party-name"
                   value={partyName}
                   onChange={(e) => handlePartyChange(e.target.value)}
-                  placeholder="e.g. Radhika Sarees"
+                  onFocus={() => {
+                    if (parties.length > 0 && partyName.trim().length > 0) {
+                      setShowPartySuggestions(partySuggestions.length > 0)
+                    }
+                  }}
+                  placeholder="Select or type party"
                   required
                 />
                 {showPartySuggestions && (
-                  <div className="absolute top-full left-0 right-0 z-50 bg-white border border-stone-200 rounded-lg shadow-lg mt-1 overflow-hidden">
+                  <div className="absolute top-full left-0 right-0 z-50 bg-white border border-[#E3E5EA] rounded-[6px] mt-1 overflow-hidden divide-y divide-[#E3E5EA]">
                     {partySuggestions.map((p) => (
                       <button
                         type="button"
                         key={p.id}
                         onClick={() => selectParty(p)}
-                        className="w-full p-2.5 hover:bg-stone-100 text-left text-xs flex justify-between items-center"
+                        className="w-full px-3 py-2 hover:bg-[#F4F5F7] text-left text-xs flex justify-between items-center cursor-pointer"
                       >
-                        <span className="font-bold text-stone-900">{p.name}</span>
-                        <span className="text-stone-500">{p.station}</span>
+                        <span className="font-semibold text-[#1A1D24]">{p.name}</span>
+                        <span className="text-[#667085]">{p.station}</span>
                       </button>
                     ))}
                   </div>
@@ -1039,19 +1020,19 @@ export default function OrderTab({
                   id="order-agent"
                   value={agent}
                   onChange={(e) => handleAgentChange(e.target.value)}
-                  placeholder="e.g. Ramesh Bhai"
+                  placeholder="Select or type agent"
                 />
                 {showAgentSuggestions && (
-                  <div className="absolute top-full left-0 right-0 z-50 bg-white border border-stone-200 rounded-lg shadow-lg mt-1 overflow-hidden">
+                  <div className="absolute top-full left-0 right-0 z-50 bg-white border border-[#E3E5EA] rounded-[6px] mt-1 overflow-hidden divide-y divide-[#E3E5EA]">
                     {agentSuggestions.map((a) => (
                       <button
                         type="button"
                         key={a.id}
                         onClick={() => selectAgent(a)}
-                        className="w-full p-2.5 hover:bg-stone-100 text-left text-xs"
+                        className="w-full px-3 py-2 hover:bg-[#F4F5F7] text-left text-xs cursor-pointer"
                       >
-                        <span className="font-bold text-stone-900">{a.name}</span>
-                        {a.station && <span className="text-stone-500 ml-1">({a.station})</span>}
+                        <span className="font-semibold text-[#1A1D24]">{a.name}</span>
+                        {a.station && <span className="text-[#667085] ml-1">({a.station})</span>}
                       </button>
                     ))}
                   </div>
@@ -1059,7 +1040,7 @@ export default function OrderTab({
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="order-gst">GST Number</Label>
+                <Label htmlFor="order-gst">GSTIN</Label>
                 <Input
                   id="order-gst"
                   value={gstNumber}
@@ -1087,7 +1068,7 @@ export default function OrderTab({
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="order-export-date">Dispatch / Export Date</Label>
+                <Label htmlFor="order-export-date">Dispatch Date</Label>
                 <Input
                   id="order-export-date"
                   type="date"
@@ -1100,124 +1081,114 @@ export default function OrderTab({
               </div>
             </div>
 
-            {/* Design Item Entry Bar */}
-            <div className="bg-stone-900 text-white p-4 rounded-xl space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-bold uppercase tracking-wider text-stone-300">
-                  Add Designs to Order
-                </span>
+            {/* Scan-Add Row */}
+            <div className="bg-white p-4 rounded-[6px] border border-[#E3E5EA] space-y-3">
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#667085]" />
+                  <Input
+                    aria-label="Search design number to add"
+                    placeholder="Type design number or brand to add..."
+                    value={itemSearch}
+                    onChange={(e) => handleSearchItem(e.target.value)}
+                    className={`pl-9 ${touchClass}`}
+                  />
+
+                  {searchResults.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 z-50 bg-white border border-[#E3E5EA] rounded-[6px] mt-1 overflow-hidden divide-y divide-[#E3E5EA]">
+                      {searchResults.map((p) => (
+                        <button
+                          type="button"
+                          key={p.id}
+                          onClick={() => addItemFromProduct(p)}
+                          className="w-full px-3 py-2 hover:bg-[#F4F5F7] text-left flex items-center justify-between text-xs cursor-pointer"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            {p.image_url && (
+                              <img
+                                src={p.image_url}
+                                alt=""
+                                className="w-8 h-8 rounded-[4px] object-cover border border-[#E3E5EA]"
+                              />
+                            )}
+                            <div>
+                              <p className="font-semibold text-[#1A1D24]">{p.design_no}</p>
+                              <p className="text-[#667085]">
+                                {p.brand || 'Kala'} · {p.fabric || 'Standard'}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right tabular-nums">
+                            <p className="font-semibold text-[#1A1D24]">
+                              {formatCurrency(p.rate || 0)}/pc
+                            </p>
+                            <p className="text-[#667085]">{p.pcs_per_set || 1} pcs/set</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <Button
                   type="button"
-                  variant="outline"
-                  size="sm"
+                  variant={showScanner ? 'default' : 'outline'}
                   onClick={() => setShowScanner(!showScanner)}
-                  className={`h-8 text-xs ${
-                    showScanner
-                      ? 'bg-orange-700 text-white border-orange-700 hover:bg-orange-800'
-                      : 'bg-stone-800 text-stone-100 border-stone-700 hover:bg-stone-700 hover:text-white'
-                  }`}
+                  className={`shrink-0 ${touchClass}`}
                 >
-                  <Camera className="w-3.5 h-3.5 mr-1.5" />
-                  {showScanner ? 'Close Camera' : 'Scan Product QR'}
+                  <Camera className="w-4 h-4" />
+                  <span>{showScanner ? 'Close Scanner' : 'Scan QR'}</span>
                 </Button>
               </div>
 
-              {/* QR Scanner Component */}
               {showScanner && (
-                <div className="bg-stone-950 p-3 rounded-lg border border-stone-800 space-y-2">
+                <div className="bg-[#F4F5F7] p-3 rounded-[6px] border border-[#E3E5EA] space-y-2">
                   <div
                     id="order-qr-reader"
-                    className="w-full max-w-xs mx-auto rounded overflow-hidden aspect-video bg-black"
+                    className="w-full max-w-xs mx-auto rounded-[6px] overflow-hidden aspect-video bg-[#1A1D24]"
                   />
-                  <p className="text-[11px] text-center text-stone-400">
-                    Point camera at product QR. Repeated scans increment set quantities automatically.
+                  <p className="text-xs text-center text-[#667085]">
+                    Point camera at product QR. Repeated scans increment sets automatically.
                   </p>
                 </div>
               )}
-
-              {/* Manual Search */}
-              <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
-                <Input
-                  aria-label="Type design number to search and add"
-                  placeholder="Type design number to search and add..."
-                  value={itemSearch}
-                  onChange={(e) => handleSearchItem(e.target.value)}
-                  className="pl-9 bg-stone-800 border-stone-700 text-white placeholder:text-stone-400 focus-visible:border-orange-500"
-                />
-
-                {searchResults.length > 0 && (
-                  <div className="absolute top-full left-0 right-0 z-50 bg-white text-stone-900 border border-stone-200 rounded-lg shadow-xl mt-1 overflow-hidden divide-y divide-stone-100">
-                    {searchResults.map((p) => (
-                      <button
-                        type="button"
-                        key={p.id}
-                        onClick={() => addItemFromProduct(p)}
-                        className="w-full p-2.5 hover:bg-orange-50 text-left flex items-center justify-between text-xs transition-colors"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          {p.image_url && (
-                            <img
-                              src={p.image_url}
-                              alt=""
-                              className="w-8 h-8 rounded object-cover border border-stone-200"
-                            />
-                          )}
-                          <div>
-                            <p className="font-bold text-stone-900">Design #{p.design_no}</p>
-                            <p className="text-stone-500 text-[10px]">
-                              {p.brand || 'Kala'} • {p.fabric || 'Standard'}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-bold text-orange-700">
-                            {formatCurrency(p.rate || 0)}/pc
-                          </p>
-                          <p className="text-stone-500 text-[10px]">{p.pcs_per_set || 1} pcs/set</p>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
             </div>
 
             {/* Order Items Table */}
-            <div className="border border-stone-200/80 rounded-xl overflow-hidden">
+            <div className="bg-white border border-[#E3E5EA] rounded-[6px] overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
-                  <thead className="bg-stone-50 border-b border-stone-200/80 text-stone-600 font-semibold uppercase tracking-wider">
+                  <thead className="bg-[#F4F5F7] border-b border-[#E3E5EA] text-[#667085] font-medium">
                     <tr>
                       <th className="py-2.5 px-3 text-left">Design No</th>
                       <th className="py-2.5 px-3 text-right w-24">Rate (₹)</th>
-                      <th className="py-2.5 px-3 text-center w-20">Sets</th>
-                      <th className="py-2.5 px-3 text-center w-20">Pcs/Set</th>
-                      <th className="py-2.5 px-3 text-center w-20">Total Pcs</th>
+                      <th className="py-2.5 px-3 text-right w-20">Sets</th>
+                      <th className="py-2.5 px-3 text-right w-20">Pcs/Set</th>
+                      <th className="py-2.5 px-3 text-right w-20">Total Pcs</th>
                       <th className="py-2.5 px-3 text-right w-28">Amount</th>
                       <th className="py-2.5 px-2 text-center w-10" />
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-stone-100">
+                  <tbody className="divide-y divide-[#E3E5EA]">
                     {items.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="py-8 text-center text-stone-500">
-                          No designs added yet. Scan a product QR code or search by design number above.
+                        <td colSpan={7} className="py-6 px-4 text-center text-sm text-[#667085]">
+                          No designs added yet. Search a design number or scan a QR tag above.
                         </td>
                       </tr>
                     ) : (
                       items.map((item, idx) => (
-                        <tr key={idx} className="hover:bg-stone-50/70">
-                          <td className="py-2 px-3 font-bold text-stone-900">
+                        <tr key={idx} className="hover:bg-[#F4F5F7]/60">
+                          <td className="py-2 px-3 font-semibold text-[#1A1D24]">
                             <div className="flex items-center gap-2">
                               {item.thumbnail && (
                                 <img
                                   src={item.thumbnail}
                                   alt=""
-                                  className="w-7 h-7 rounded object-cover border border-stone-200"
+                                  className="w-7 h-7 rounded-[4px] object-cover border border-[#E3E5EA]"
                                 />
                               )}
-                              <span>#{item.design_no}</span>
+                              <span>{item.design_no}</span>
                             </div>
                           </td>
                           <td className="py-2 px-3 text-right">
@@ -1233,7 +1204,7 @@ export default function OrderTab({
                               className="h-8 text-right text-xs px-2 tabular-nums"
                             />
                           </td>
-                          <td className="py-2 px-3 text-center">
+                          <td className="py-2 px-3 text-right">
                             <Input
                               aria-label={`Sets for design ${item.design_no}`}
                               type="number"
@@ -1241,10 +1212,10 @@ export default function OrderTab({
                               max="500"
                               value={item.sets}
                               onChange={(e) => updateItem(idx, 'sets', parseInt(e.target.value) || 1)}
-                              className="h-8 text-center text-xs px-2 font-bold text-stone-900 tabular-nums"
+                              className="h-8 text-right text-xs px-2 font-semibold tabular-nums"
                             />
                           </td>
-                          <td className="py-2 px-3 text-center">
+                          <td className="py-2 px-3 text-right">
                             <Input
                               aria-label={`Pieces per set for design ${item.design_no}`}
                               type="number"
@@ -1253,13 +1224,13 @@ export default function OrderTab({
                               onChange={(e) =>
                                 updateItem(idx, 'pcs_per_set', parseInt(e.target.value) || 1)
                               }
-                              className="h-8 text-center text-xs px-2 tabular-nums"
+                              className="h-8 text-right text-xs px-2 tabular-nums"
                             />
                           </td>
-                          <td className="py-2 px-3 text-center font-bold text-stone-700 font-mono tabular-nums">
-                            {item.total_pcs}
+                          <td className="py-2 px-3 text-right font-medium text-[#1A1D24] tabular-nums">
+                            {item.total_pcs.toLocaleString('en-IN')}
                           </td>
-                          <td className="py-2 px-3 text-right font-bold text-stone-900 tabular-nums">
+                          <td className="py-2 px-3 text-right font-semibold text-[#1A1D24] tabular-nums whitespace-nowrap">
                             {formatCurrency(item.line_total)}
                           </td>
                           <td className="py-2 px-2 text-center">
@@ -1267,7 +1238,7 @@ export default function OrderTab({
                               type="button"
                               title="Remove item"
                               onClick={() => removeItem(idx)}
-                              className="text-red-600 hover:text-red-700 p-1 rounded hover:bg-red-50"
+                              className="text-[#B42318] p-1.5 rounded-[6px] hover:bg-[#F4F5F7] cursor-pointer"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -1279,59 +1250,47 @@ export default function OrderTab({
                 </table>
               </div>
             </div>
+          </div>
 
-            {/* Calculations Summary Box */}
-            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 bg-stone-50 p-4 rounded-xl border border-stone-200/80">
-              <div className="flex flex-wrap gap-5 text-xs text-stone-600 font-medium">
-                <span>
-                  Total Designs: <strong className="text-stone-900">{items.length}</strong>
-                </span>
-                <span>
-                  Total Sets: <strong className="text-stone-900">{totalSets}</strong>
-                </span>
-                <span>
-                  Total Pieces: <strong className="text-stone-900">{totalPieces}</strong>
-                </span>
-              </div>
-              <div className="sm:text-right">
-                <span className="text-[11px] font-semibold text-stone-500 block uppercase tracking-wider">
-                  Total Order Amount
-                </span>
-                <span className="text-2xl font-extrabold text-orange-700 tabular-nums">
-                  {formatCurrency(totalAmount)}
-                </span>
-              </div>
+          {/* Pinned Totals Bar */}
+          <div className="sticky bottom-0 px-5 py-3.5 bg-white border-t border-[#E3E5EA] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
+            <div className="flex flex-wrap items-center gap-4 text-xs text-[#667085] tabular-nums">
+              <span>
+                Designs: <strong className="text-[#1A1D24]">{items.length}</strong>
+              </span>
+              <span>
+                Sets: <strong className="text-[#1A1D24]">{totalSets.toLocaleString('en-IN')}</strong>
+              </span>
+              <span>
+                Pieces: <strong className="text-[#1A1D24]">{totalPieces.toLocaleString('en-IN')}</strong>
+              </span>
+              <span className="text-sm font-semibold text-[#1A1D24]">
+                Total: {formatCurrency(totalAmount)}
+              </span>
             </div>
 
-            {/* Form actions */}
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-stone-200/80">
-              <div>
-                {!editingOrder && (items.length > 0 || partyName.trim()) && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={discardSharedDraftAndReset}
-                    className="text-red-700 hover:text-red-800 hover:bg-red-50 text-xs"
-                  >
-                    <Trash2 className="w-3.5 h-3.5 mr-1" />
-                    Discard Draft
-                  </Button>
-                )}
-              </div>
-              <div className="flex gap-2">
-                <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
-                  Close
-                </Button>
+            <div className="flex items-center gap-2 justify-end">
+              {!editingOrder && (items.length > 0 || partyName.trim()) && (
                 <Button
                   type="button"
-                  onClick={handleSaveOrder}
-                  disabled={formLoading || items.length === 0}
-                  className="bg-orange-700 hover:bg-orange-800 text-white"
+                  variant="ghost"
+                  size="sm"
+                  onClick={discardSharedDraftAndReset}
+                  className="text-[#B42318] text-xs"
                 >
-                  {formLoading ? 'Saving...' : editingOrder ? 'Update Order' : 'Save Draft Order'}
+                  Discard
                 </Button>
-              </div>
+              )}
+              <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
+                Close
+              </Button>
+              <Button
+                type="button"
+                onClick={handleSaveOrder}
+                disabled={formLoading || items.length === 0}
+              >
+                {formLoading ? 'Saving...' : editingOrder ? 'Update Order' : 'Save Draft Order'}
+              </Button>
             </div>
           </div>
         </DialogContent>
@@ -1341,27 +1300,24 @@ export default function OrderTab({
       <Dialog open={confirmModalOrder !== null} onOpenChange={() => setConfirmModalOrder(null)}>
         <DialogContent className="sm:max-w-[440px]">
           <DialogHeader>
-            <DialogTitle className="text-lg font-bold flex items-center gap-2 text-stone-900">
-              <CheckCircle2 className="w-5 h-5 text-emerald-700" />
-              Confirm Order & Deduct Stock
-            </DialogTitle>
+            <DialogTitle>Confirm Order &amp; Deduct Stock</DialogTitle>
           </DialogHeader>
 
           {confirmModalOrder && (
-            <div className="space-y-4 pt-2 text-sm">
-              <p className="text-stone-600 leading-relaxed">
-                Confirming Order <strong className="text-stone-900">{confirmModalOrder.order_no}</strong> for{' '}
-                <strong className="text-stone-900">{confirmModalOrder.party_name}</strong> will lock pricing and
-                atomically deduct inventory sets.
+            <div className="space-y-4 pt-1 text-sm">
+              <p className="text-[#667085] leading-relaxed">
+                Confirming <strong className="text-[#1A1D24]">{confirmModalOrder.order_no}</strong> for{' '}
+                <strong className="text-[#1A1D24]">{confirmModalOrder.party_name}</strong> locks pricing and
+                deducts inventory sets from the selected location.
               </p>
 
               <div className="space-y-1.5">
-                <Label htmlFor="confirm-location">Deduct Inventory From Location *</Label>
+                <Label htmlFor="confirm-location">Deduct Inventory From *</Label>
                 <select
                   id="confirm-location"
                   value={deductLocationId}
                   onChange={(e) => setDeductLocationId(e.target.value)}
-                  className="w-full h-10 bg-white border border-stone-300 rounded-lg px-3 text-sm font-medium text-stone-900 focus:outline-none focus:ring-2 focus:ring-orange-600/20 focus:border-orange-700"
+                  className="w-full h-9 bg-white border border-[#E3E5EA] rounded-[6px] px-3 text-sm text-[#1A1D24]"
                 >
                   {locations.map((l) => (
                     <option key={l.id} value={String(l.id)}>
@@ -1372,7 +1328,7 @@ export default function OrderTab({
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="confirm-staff">Staff Authorizing</Label>
+                <Label htmlFor="confirm-staff">Authorizing Staff</Label>
                 <Input
                   id="confirm-staff"
                   value={confirmStaffName}
@@ -1381,16 +1337,16 @@ export default function OrderTab({
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-stone-200/80">
+              <div className="flex justify-end gap-2 pt-3 border-t border-[#E3E5EA]">
                 <Button variant="outline" onClick={() => setConfirmModalOrder(null)}>
-                  Keep Draft
+                  Cancel
                 </Button>
                 <Button
                   onClick={handleExecuteConfirmation}
                   disabled={confirmLoading}
-                  className="bg-emerald-700 hover:bg-emerald-800 text-white font-semibold"
+                  className="bg-[#1F7A4D] hover:bg-[#17603C] text-white"
                 >
-                  {confirmLoading ? 'Processing Deduction...' : 'Confirm & Deduct Stock'}
+                  {confirmLoading ? 'Confirming...' : 'Confirm & Deduct'}
                 </Button>
               </div>
             </div>
@@ -1409,7 +1365,10 @@ export default function OrderTab({
           </AlertDialogHeader>
           <div className="flex justify-end gap-2">
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-red-700 hover:bg-red-800 text-white">
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-[#B42318] hover:bg-[#911C13] text-white"
+            >
               Delete Order
             </AlertDialogAction>
           </div>
