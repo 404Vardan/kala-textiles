@@ -1,4 +1,4 @@
-import supabase from './supabase'
+import supabase, { getActiveBusinessId } from './supabase'
 import type { AdminSettings, PublicBusinessSettings } from '@/types'
 
 function sanitizeConfiguredWhatsapp(raw?: string | null): string {
@@ -53,7 +53,7 @@ export async function fetchPublicBusinessSettings(slug: string = 'rangoli'): Pro
   const validWhatsapp = sanitizeConfiguredWhatsapp(payload.whatsapp_number)
 
   return {
-    business_name: payload.business_name || 'Kala',
+    business_name: payload.business_name || 'Rangoli Textiles',
     business_slug: payload.business_slug || cleanSlug,
     whatsapp_number: validWhatsapp || null,
   }
@@ -61,14 +61,21 @@ export async function fetchPublicBusinessSettings(slug: string = 'rangoli'): Pro
 
 /**
  * Authenticated owner helper to read current business settings including WhatsApp contact.
- * Reads from businesses.settings.whatsapp_number first, with fallback to admin_settings.
+ * Filters explicitly by active business_id so multi-company owners always read the active company.
  */
 export async function fetchAdminSettings(): Promise<AdminSettings> {
   const now = new Date().toISOString()
+  const activeBizId = getActiveBusinessId()
 
-  const { data: bizData, error: bizError } = await supabase
+  let bizQuery = supabase
     .from('businesses')
     .select('id, settings, created_at, updated_at')
+
+  if (activeBizId !== null) {
+    bizQuery = bizQuery.eq('id', activeBizId)
+  }
+
+  const { data: bizData, error: bizError } = await bizQuery
     .limit(1)
     .maybeSingle()
 

@@ -2,7 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-business-id',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
@@ -56,18 +56,35 @@ Deno.serve(async (req: Request) => {
       auth: { persistSession: false, autoRefreshToken: false },
     })
 
-    // 3. Verify caller is an owner of a single business
+    // 3. Resolve active business from x-business-id header (with single-company fallback)
     const { data: callerMemberships, error: membershipErr } = await adminClient
       .from('memberships')
       .select('business_id, role')
       .eq('user_id', caller.id)
 
-    if (membershipErr || !callerMemberships || callerMemberships.length !== 1) {
-      return jsonResponse({ error: 'Account must belong to a single business' }, 403)
+    if (membershipErr || !callerMemberships || callerMemberships.length === 0) {
+      return jsonResponse({ error: 'No business membership found for caller' }, 403)
     }
 
-    const callerMembership = callerMemberships[0]
-    if (callerMembership.role !== 'owner') {
+    const rawHeaderBiz = (req.headers.get('x-business-id') || '').trim()
+    let targetBusinessId: number | null = null
+
+    if (rawHeaderBiz) {
+      if (!/^[0-9]+$/.test(rawHeaderBiz)) {
+        return jsonResponse({ error: 'Invalid x-business-id header' }, 400)
+      }
+      targetBusinessId = Number(rawHeaderBiz)
+    } else if (callerMemberships.length === 1) {
+      targetBusinessId = callerMemberships[0].business_id
+    } else {
+      return jsonResponse(
+        { error: 'x-business-id header is required for multi-company accounts' },
+        400
+      )
+    }
+
+    const callerMembership = callerMemberships.find((m) => m.business_id === targetBusinessId)
+    if (!callerMembership || callerMembership.role !== 'owner') {
       return jsonResponse({ error: 'Only business owners can invite team members' }, 403)
     }
 
@@ -106,7 +123,6 @@ Deno.serve(async (req: Request) => {
       targetUserId = inviteData.user.id
       invited = true
     } else {
-      // If user is already registered in Supabase Auth, look up their user ID
       const { data: listed, error: listErr } = await adminClient.auth.admin.listUsers({
         page: 1,
         perPage: 1000,
@@ -133,35 +149,44 @@ Deno.serve(async (req: Request) => {
       invited = false
     }
 
-    // 6. Enforce single-business membership invariant
-    const { data: existingMemberships, error: existingMemErr } = await adminClient
+    // 6. Prevent duplicate membership in the target business (multi-company users are allowed)
+    const { data: existingInBiz, error: existingMemErr } = await adminClient
       .from('memberships')
-      .select('business_id, role')
+      .select('business_id')
       .eq('user_id', targetUserId)
+      .eq('business_id', businessId)
+      .maybeSingle()
 
     if (existingMemErr) {
       return jsonResponse({ error: 'Failed to verify target user membership' }, 500)
     }
 
-    if (existingMemberships && existingMemberships.length > 0) {
-      const sameBiz = existingMemberships.some((m) => m.business_id === businessId)
-      if (sameBiz) {
-        return jsonResponse({ error: 'This user is already a member of your business.' }, 409)
-      }
-      return jsonResponse(
-        { error: 'This user already belongs to another business.' },
-        409
-      )
+    if (existingInBiz) {
+      return jsonResponse({ error: 'This user is already a member of this business.' }, 409)
     }
 
-    // 7. Create membership row in the caller's business
+    // 7. Resolve matching system role_id (Owner or Sales Staff) for the target business
+    const systemRoleName = rawRole === 'owner' ? 'Owner' : 'Sales Staff'
+    const { data: roleRow } = await adminClient
+      .from('roles')
+      .select('id')
+      .eq('business_id', businessId)
+      .eq('name', systemRoleName)
+      .maybeSingle()
+
+    // 8. Insert membership row with consistent role_id
+    const membershipRow: Record<string, unknown> = {
+      user_id: targetUserId,
+      business_id: businessId,
+      role: rawRole,
+    }
+    if (roleRow?.id) {
+      membershipRow.role_id = roleRow.id
+    }
+
     const { error: insertErr } = await adminClient
       .from('memberships')
-      .insert({
-        user_id: targetUserId,
-        business_id: businessId,
-        role: rawRole,
-      })
+      .insert(membershipRow)
 
     if (insertErr) {
       return jsonResponse({ error: insertErr.message || 'Failed to add member to business' }, 500)
@@ -170,8 +195,10 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({
       success: true,
       user_id: targetUserId,
+      business_id: businessId,
       email: rawEmail,
       role: rawRole,
+      role_id: roleRow?.id ?? null,
       invited,
     })
   } catch (err) {
