@@ -18,8 +18,9 @@ Kala enforces **fail-closed request-scoped tenancy**:
    - If absent: returns the sole `business_id` ONLY when `COUNT(*) = 1` in `public.memberships`. For multi-company users with no header → returns `NULL` (**fail closed**).
 3. **Strict RLS on Every Tenant Table**:
    - Every tenant-scoped `SELECT`, `INSERT`, `UPDATE`, and `DELETE` policy enforces `business_id = public.current_business_id()`.
-4. **Explicit `p_business_id` Validation on Privileged RPCs**:
-   - All Stage 2 RPCs (`intake_set_stock_v2`, `receive_taka_lot_tx`, `transfer_taka_tx`, `split_taka_tx`, `verify_inventory_integrity`) require `p_business_id IS NOT NULL AND p_business_id = public.current_business_id()` in addition to `has_permission()` / `is_business_member()`.
+4. **Explicit Active-Business Validation**:
+   - Transactional Stage 2 RPCs validate the active business context (`p_business_id IS NOT NULL AND p_business_id = public.current_business_id()`) and enforce their applicable write permission.
+   - `verify_inventory_integrity(p_business_id)` independently validates authentication, active business context, and membership. It is read-only and does not require write RBAC.
 
 ### 1.2 Database Function Security Contracts (By Function Class)
 
