@@ -602,3 +602,232 @@ export interface AdminSettings {
   created_at: string
   updated_at: string
 }
+
+
+// Stage 3: Kala Finance / Accounting Core types
+export type AccountGroup = 'asset' | 'liability' | 'equity' | 'income' | 'expense'
+export type BalanceType = 'DR' | 'CR'
+export type VoucherType =
+  | 'SALES'
+  | 'PURCHASE'
+  | 'SALES_RETURN'
+  | 'PURCHASE_RETURN'
+  | 'RECEIPT'
+  | 'PAYMENT'
+  | 'JOURNAL'
+  | 'CONTRA'
+  | 'REVERSAL'
+export type VoucherStatus = 'draft' | 'posted'
+
+export interface Account {
+  id: number
+  business_id: number
+  code: string
+  name: string
+  account_group: AccountGroup
+  sub_group?: string | null
+  account_sub_ledger_type?: 'NONE' | 'PARTY' | 'BANK' | 'CASH' | 'TAX' | 'INVENTORY'
+  party_id?: number | null
+  opening_balance: number
+  opening_balance_type: BalanceType
+  is_system: boolean
+  is_active: boolean
+  row_version: number
+  created_at: string
+  updated_at: string
+}
+
+export interface CostCenter {
+  id: number
+  business_id: number
+  code: string
+  name: string
+  is_active: boolean
+  row_version: number
+  created_at: string
+  updated_at: string
+}
+
+export interface Voucher {
+  id: number
+  business_id: number
+  branch_id: number
+  fy_id: number
+  voucher_no: string
+  voucher_type: VoucherType
+  voucher_date: string
+  currency_code: string
+  exchange_rate: number
+  party_id?: number | null
+  ref_doc_type?: string | null
+  ref_doc_id?: number | null
+  reversed_voucher_id?: number | null
+  narration?: string | null
+  total_amount: number
+  base_total_amount: number
+  status: VoucherStatus
+  idempotency_key?: string | null
+  created_by: string
+  posted_at?: string | null
+  created_at: string
+}
+
+export interface VoucherEntry {
+  id: number
+  business_id: number
+  voucher_id: number
+  account_id: number
+  cost_center_id?: number | null
+  party_id?: number | null
+  debit: number
+  credit: number
+  base_debit: number
+  base_credit: number
+  line_narration?: string | null
+}
+
+export interface VoucherEntryInput {
+  account_id: number
+  debit: number
+  credit: number
+  cost_center_id?: number | null
+  party_id?: number | null
+  narration?: string | null
+}
+
+export interface BillAllocation {
+  id: number
+  business_id: number
+  party_id: number
+  invoice_voucher_id: number
+  settlement_voucher_id: number
+  allocated_amount: number
+  currency_code: string
+  allocation_date: string
+  idempotency_key?: string | null
+  created_by: string
+  created_at: string
+}
+
+export interface PostVoucherResult {
+  success: boolean
+  voucher_id: number
+  voucher_no: string
+  voucher_type: VoucherType
+  fy_id: number
+  party_id?: number | null
+  total_amount: number
+  base_total_amount: number
+  status: VoucherStatus
+}
+
+export interface ReverseVoucherResult {
+  success: boolean
+  reversal_voucher_id: number
+  reversal_voucher_no: string
+  reversed_voucher_id: number
+  party_id?: number | null
+  status: VoucherStatus
+}
+
+export interface AllocateBillPaymentResult {
+  success: boolean
+  allocation_id: number
+  party_id: number
+  invoice_voucher_id: number
+  settlement_voucher_id: number
+  allocated_amount: number
+  currency_code: string
+  invoice_remaining: number
+  settlement_remaining: number
+}
+
+export interface OpeningBalanceReport {
+  balanced: boolean
+  total_debit: number
+  total_credit: number
+  diff: number
+}
+
+export interface TrialBalanceReport {
+  balanced: boolean
+  fy_id: number
+  voucher_count: number
+  total_debit: number
+  total_credit: number
+  diff: number
+}
+
+export interface CloseFinancialYearResult {
+  success: boolean
+  fy_id: number
+  label: string
+  is_locked: boolean
+  net_profit: number
+  closing_voucher_id: number | null
+  closing_voucher_no: string | null
+  next_fy_id?: number | null
+  carried_accounts?: number
+  carried_open_bills?: number
+}
+
+export type PartyBillRole =
+  | 'RECEIVABLE_BILL'
+  | 'PAYABLE_BILL'
+  | 'RECEIVABLE_SETTLEMENT'
+  | 'PAYABLE_SETTLEMENT'
+  | 'ADVANCE_RECEIVED'
+  | 'ADVANCE_PAID'
+
+export interface PartySubledgerBill {
+  id: number
+  business_id: number
+  branch_id: number
+  origin_fy_id: number
+  voucher_id: number
+  voucher_entry_id: number
+  account_id: number
+  party_id: number
+  bill_role: PartyBillRole
+  normal_side: BalanceType
+  bill_no: string
+  document_date: string
+  due_date?: string | null
+  currency_code: string
+  exchange_rate: number
+  original_txn_amount: number
+  original_base_amount: number
+  allocated_txn_amount: number
+  allocated_base_amount: number
+  remaining_txn_amount: number
+  remaining_base_amount: number
+  status: 'open' | 'partially_settled' | 'settled' | 'reversed'
+  created_at: string
+  updated_at: string
+}
+
+export interface AccountOpeningBalance {
+  id: number
+  business_id: number
+  fy_id: number
+  account_id: number
+  branch_id?: number | null
+  party_id?: number | null
+  currency_code: string
+  opening_txn_debit: number
+  opening_txn_credit: number
+  opening_base_debit: number
+  opening_base_credit: number
+  source_type: 'MANUAL' | 'FY_CARRY_FORWARD' | 'RELY_MIGRATION'
+  source_fy_id?: number | null
+  source_ref?: string | null
+  created_by: string
+  created_at: string
+}
+
+export interface SubledgerControlTieoutReport {
+  balanced: boolean
+  fy_id: number
+  allocation_cache_mismatches: number
+  control_account_mismatches: number
+}
