@@ -657,6 +657,7 @@ export interface Voucher {
   voucher_date: string
   currency_code: string
   exchange_rate: number
+  party_id?: number | null
   ref_doc_type?: string | null
   ref_doc_id?: number | null
   reversed_voucher_id?: number | null
@@ -676,6 +677,7 @@ export interface VoucherEntry {
   voucher_id: number
   account_id: number
   cost_center_id?: number | null
+  party_id?: number | null
   debit: number
   credit: number
   base_debit: number
@@ -688,15 +690,18 @@ export interface VoucherEntryInput {
   debit: number
   credit: number
   cost_center_id?: number | null
+  party_id?: number | null
   narration?: string | null
 }
 
 export interface BillAllocation {
   id: number
   business_id: number
+  party_id: number
   invoice_voucher_id: number
   settlement_voucher_id: number
   allocated_amount: number
+  currency_code: string
   allocation_date: string
   idempotency_key?: string | null
   created_by: string
@@ -709,6 +714,7 @@ export interface PostVoucherResult {
   voucher_no: string
   voucher_type: VoucherType
   fy_id: number
+  party_id?: number | null
   total_amount: number
   base_total_amount: number
   status: VoucherStatus
@@ -719,15 +725,18 @@ export interface ReverseVoucherResult {
   reversal_voucher_id: number
   reversal_voucher_no: string
   reversed_voucher_id: number
+  party_id?: number | null
   status: VoucherStatus
 }
 
 export interface AllocateBillPaymentResult {
   success: boolean
   allocation_id: number
+  party_id: number
   invoice_voucher_id: number
   settlement_voucher_id: number
   allocated_amount: number
+  currency_code: string
   invoice_remaining: number
   settlement_remaining: number
 }

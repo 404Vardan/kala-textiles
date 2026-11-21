@@ -149,6 +149,7 @@ export async function postVoucher(params: {
   voucherType: Exclude<VoucherType, 'REVERSAL'>
   voucherDate: string
   entries: VoucherEntryInput[]
+  partyId?: number | null
   narration?: string | null
   refDocType?: string | null
   refDocId?: number | null
@@ -172,6 +173,7 @@ export async function postVoucher(params: {
     p_currency_code: params.currencyCode ?? 'INR',
     p_exchange_rate: params.exchangeRate ?? 1.0,
     p_idempotency_key: params.idempotencyKey ?? null,
+    p_party_id: params.partyId ?? null,
   })
 
   if (error) throw new Error(error.message || 'Voucher posting RPC failed')

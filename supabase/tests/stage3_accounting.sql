@@ -22,6 +22,8 @@ DECLARE
   v_branch_b BIGINT;
   v_fy_a BIGINT;
   v_fy_b BIGINT;
+  v_party_a BIGINT;
+  v_party_b BIGINT;
 
   v_acc_cash BIGINT;
   v_acc_bank BIGINT;
@@ -40,11 +42,13 @@ DECLARE
   v_rev_vch_id BIGINT;
   v_rcpt_1_id BIGINT;
   v_rcpt_2_id BIGINT;
+  v_rcpt_party_b_id BIGINT;
+  v_rcpt_noparty_id BIGINT;
   v_cnt INT;
   v_failed BOOLEAN;
   v_fn TEXT;
   v_stage3_fns TEXT[] := ARRAY[
-    'public.post_voucher_tx(bigint, bigint, text, date, jsonb, text, text, bigint, character, numeric, uuid)',
+    'public.post_voucher_tx(bigint, bigint, text, date, jsonb, text, text, bigint, character, numeric, uuid, bigint)',
     'public.reverse_voucher_tx(bigint, bigint, date, text, uuid)',
     'public.allocate_bill_payment_tx(bigint, bigint, bigint, numeric, date, uuid)',
     'public.verify_opening_balances(bigint)',
@@ -85,6 +89,14 @@ BEGIN
 
   SELECT id INTO v_branch_a FROM public.branches WHERE business_id = v_biz_a AND is_default IS TRUE LIMIT 1;
   SELECT id INTO v_fy_a FROM public.financial_years WHERE business_id = v_biz_a AND is_active IS TRUE LIMIT 1;
+
+  INSERT INTO public.parties (business_id, name, station)
+  VALUES (v_biz_a, 'Customer A Sarees', 'Surat')
+  RETURNING id INTO v_party_a;
+
+  INSERT INTO public.parties (business_id, name, station)
+  VALUES (v_biz_a, 'Customer B Fabrics', 'Mumbai')
+  RETURNING id INTO v_party_b;
 
   -- ==================================================================
   -- TEST 1: Default Textile COA Seeding & System Account Protection
@@ -133,7 +145,7 @@ BEGIN
   EXCEPTION WHEN raise_exception THEN v_failed := TRUE; END;
   IF NOT v_failed THEN RAISE EXCEPTION 'FAIL: Unbalanced voucher was accepted'; END IF;
 
-  -- Valid balanced SALES voucher: DR Debtors 10,000 / CR Sales 10,000
+  -- Valid balanced SALES voucher for Customer A: DR Debtors 10,000 / CR Sales 10,000
   v_res := public.post_voucher_tx(
     v_biz_a, v_branch_a, 'SALES', CURRENT_DATE,
     jsonb_build_array(
@@ -141,10 +153,10 @@ BEGIN
       jsonb_build_object('account_id', v_acc_sales, 'debit', 0, 'credit', 10000, 'narration', 'Wholesale dispatch')
     ),
     'Invoice S3-001', 'SALES_INVOICE', 101, 'INR', 1.0,
-    '33333333-1111-4111-8111-333333333333'::UUID
+    '33333333-1111-4111-8111-333333333333'::UUID, v_party_a
   );
   v_sales_vch_id := (v_res->>'voucher_id')::BIGINT;
-  IF (v_res->>'status') <> 'posted' OR (v_res->>'base_total_amount')::NUMERIC <> 10000 THEN
+  IF (v_res->>'status') <> 'posted' OR (v_res->>'base_total_amount')::NUMERIC <> 10000 OR (v_res->>'party_id')::BIGINT <> v_party_a THEN
     RAISE EXCEPTION 'FAIL: Balanced sales voucher posting failed: %', v_res;
   END IF;
 
@@ -156,7 +168,7 @@ BEGIN
       jsonb_build_object('account_id', v_acc_sales, 'debit', 0, 'credit', 10000, 'narration', 'Wholesale dispatch')
     ),
     'Invoice S3-001', 'SALES_INVOICE', 101, 'INR', 1.0,
-    '33333333-1111-4111-8111-333333333333'::UUID
+    '33333333-1111-4111-8111-333333333333'::UUID, v_party_a
   );
   IF (v_res->>'voucher_id')::BIGINT <> v_sales_vch_id THEN
     RAISE EXCEPTION 'FAIL: Idempotent voucher replay created duplicate voucher';
@@ -293,21 +305,58 @@ BEGIN
   -- ==================================================================
   -- TEST 5: Dual-Locked Bill Allocations (Over-Settlement & Double-Spend)
   -- ==================================================================
-  -- Receipt 1: ₹6,000
+  -- Receipt 1 (Customer A): ₹6,000
   v_res := public.post_voucher_tx(
     v_biz_a, v_branch_a, 'RECEIPT', CURRENT_DATE,
     jsonb_build_array(
       jsonb_build_object('account_id', v_acc_bank, 'debit', 6000, 'credit', 0),
       jsonb_build_object('account_id', v_acc_debtors, 'debit', 0, 'credit', 6000)
     ),
-    'Part payment 1'
+    'Part payment 1', NULL, NULL, 'INR', 1.0, NULL, v_party_a
   );
   v_rcpt_1_id := (v_res->>'voucher_id')::BIGINT;
 
-  -- Allocate ₹4,000 of Receipt 1 to Sales Voucher (₹10,000)
+  -- Receipt from Customer B: ₹2,000 -> MUST be rejected against Customer A's invoice!
+  v_res := public.post_voucher_tx(
+    v_biz_a, v_branch_a, 'RECEIPT', CURRENT_DATE,
+    jsonb_build_array(
+      jsonb_build_object('account_id', v_acc_bank, 'debit', 2000, 'credit', 0),
+      jsonb_build_object('account_id', v_acc_debtors, 'debit', 0, 'credit', 2000)
+    ),
+    'Customer B payment', NULL, NULL, 'INR', 1.0, NULL, v_party_b
+  );
+  v_rcpt_party_b_id := (v_res->>'voucher_id')::BIGINT;
+
+  v_failed := FALSE;
+  BEGIN
+    PERFORM public.allocate_bill_payment_tx(v_biz_a, v_sales_vch_id, v_rcpt_party_b_id, 1000, CURRENT_DATE);
+  EXCEPTION WHEN raise_exception THEN v_failed := TRUE; END;
+  IF NOT v_failed THEN RAISE EXCEPTION 'FAIL: Cross-party allocation (Customer B receipt -> Customer A invoice) was allowed'; END IF;
+
+  -- Party-less receipt (party_id NULL) -> MUST be rejected for bill allocation!
+  v_res := public.post_voucher_tx(
+    v_biz_a, v_branch_a, 'RECEIPT', CURRENT_DATE,
+    jsonb_build_array(
+      jsonb_build_object('account_id', v_acc_bank, 'debit', 1000, 'credit', 0),
+      jsonb_build_object('account_id', v_acc_debtors, 'debit', 0, 'credit', 1000)
+    ),
+    'Unidentified receipt'
+  );
+  v_rcpt_noparty_id := (v_res->>'voucher_id')::BIGINT;
+
+  v_failed := FALSE;
+  BEGIN
+    PERFORM public.allocate_bill_payment_tx(v_biz_a, v_sales_vch_id, v_rcpt_noparty_id, 500, CURRENT_DATE);
+  EXCEPTION WHEN raise_exception THEN v_failed := TRUE; END;
+  IF NOT v_failed THEN RAISE EXCEPTION 'FAIL: Party-less receipt allocation was allowed'; END IF;
+
+  -- Allocate ₹4,000 of Customer A Receipt 1 to Customer A Sales Voucher (₹10,000) in INR
   v_res := public.allocate_bill_payment_tx(v_biz_a, v_sales_vch_id, v_rcpt_1_id, 4000, CURRENT_DATE);
-  IF (v_res->>'invoice_remaining')::NUMERIC <> 6000 OR (v_res->>'settlement_remaining')::NUMERIC <> 2000 THEN
-    RAISE EXCEPTION 'FAIL: Unexpected allocation remainder: %', v_res;
+  IF (v_res->>'invoice_remaining')::NUMERIC <> 6000
+     OR (v_res->>'settlement_remaining')::NUMERIC <> 2000
+     OR (v_res->>'party_id')::BIGINT <> v_party_a
+     OR (v_res->>'currency_code') <> 'INR' THEN
+    RAISE EXCEPTION 'FAIL: Unexpected allocation result: %', v_res;
   END IF;
 
   -- Double-spend check: allocating ₹3,000 from Receipt 1 (> ₹2,000 remaining) MUST fail
@@ -320,14 +369,14 @@ BEGIN
   -- Allocate remaining ₹2,000 of Receipt 1 -> invoice remaining = ₹4,000
   PERFORM public.allocate_bill_payment_tx(v_biz_a, v_sales_vch_id, v_rcpt_1_id, 2000, CURRENT_DATE);
 
-  -- Receipt 2: ₹5,000 -> trying to allocate ₹5,000 against ₹4,000 invoice remaining MUST fail
+  -- Receipt 2 (Customer A): ₹5,000 -> trying to allocate ₹5,000 against ₹4,000 invoice remaining MUST fail
   v_res := public.post_voucher_tx(
     v_biz_a, v_branch_a, 'RECEIPT', CURRENT_DATE,
     jsonb_build_array(
       jsonb_build_object('account_id', v_acc_bank, 'debit', 5000, 'credit', 0),
       jsonb_build_object('account_id', v_acc_debtors, 'debit', 0, 'credit', 5000)
     ),
-    'Part payment 2'
+    'Part payment 2', NULL, NULL, 'INR', 1.0, NULL, v_party_a
   );
   v_rcpt_2_id := (v_res->>'voucher_id')::BIGINT;
 
