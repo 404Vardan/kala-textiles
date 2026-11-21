@@ -15,6 +15,9 @@ import type {
   OpeningBalanceReport,
   TrialBalanceReport,
   CloseFinancialYearResult,
+  PartySubledgerBill,
+  AccountOpeningBalance,
+  SubledgerControlTieoutReport,
 } from '@/types'
 
 // --------------------------------------------------------------------
@@ -231,11 +234,94 @@ export async function allocateBillPayment(params: {
   return data as AllocateBillPaymentResult
 }
 
-export async function verifyOpeningBalances(
+export async function fetchPartySubledgerBills(filters?: {
+  partyId?: number
+  status?: PartySubledgerBill['status']
+  limit?: number
+}): Promise<PartySubledgerBill[]> {
+  let query = supabase
+    .from('party_subledger_bills')
+    .select('*')
+    .order('document_date', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(filters?.limit ?? 100)
+
+  if (filters?.partyId !== undefined) {
+    query = query.eq('party_id', filters.partyId)
+  }
+  if (filters?.status !== undefined) {
+    query = query.eq('status', filters.status)
+  }
+
+  const { data, error } = await query
+  if (error) throw error
+  return (data ?? []) as PartySubledgerBill[]
+}
+
+export async function fetchAccountOpeningBalances(
+  fyId: number
+): Promise<AccountOpeningBalance[]> {
+  const { data, error } = await supabase
+    .from('account_opening_balances')
+    .select('*')
+    .eq('fy_id', fyId)
+    .order('account_id', { ascending: true })
+
+  if (error) throw error
+  return (data ?? []) as AccountOpeningBalance[]
+}
+
+export async function setOpeningBalance(params: {
   businessId: number
+  fyId: number
+  accountId: number
+  openingDebit?: number
+  openingCredit?: number
+  partyId?: number | null
+  branchId?: number | null
+  currencyCode?: string
+  sourceType?: 'MANUAL' | 'RELY_MIGRATION'
+  sourceRef?: string | null
+}): Promise<Record<string, unknown>> {
+  const { data, error } = await supabase.rpc('set_opening_balance_tx', {
+    p_business_id: params.businessId,
+    p_fy_id: params.fyId,
+    p_account_id: params.accountId,
+    p_opening_debit: params.openingDebit ?? 0,
+    p_opening_credit: params.openingCredit ?? 0,
+    p_party_id: params.partyId ?? null,
+    p_branch_id: params.branchId ?? null,
+    p_currency_code: params.currencyCode ?? 'INR',
+    p_source_type: params.sourceType ?? 'MANUAL',
+    p_source_ref: params.sourceRef ?? null,
+  })
+
+  if (error) throw new Error(error.message || 'Set opening balance RPC failed')
+  if (!data) throw new Error('Set opening balance RPC returned no data')
+  return data as Record<string, unknown>
+}
+
+export async function verifySubledgerControlTieout(
+  businessId: number,
+  fyId: number
+): Promise<SubledgerControlTieoutReport> {
+  const { data, error } = await supabase.rpc('verify_subledger_control_tieout', {
+    p_business_id: businessId,
+    p_fy_id: fyId,
+  })
+
+  if (error) throw new Error(error.message || 'Subledger control tie-out RPC failed')
+  if (!data) throw new Error('Subledger control tie-out RPC returned no data')
+  return data as SubledgerControlTieoutReport
+}
+
+export async function verifyOpeningBalances(
+  businessId: number,
+  fyId?: number | null
 ): Promise<OpeningBalanceReport> {
   const { data, error } = await supabase.rpc('verify_opening_balances', {
     p_business_id: businessId,
+    p_fy_id: fyId ?? null,
   })
 
   if (error) throw new Error(error.message || 'Opening balance verification failed')
@@ -261,11 +347,13 @@ export async function closeFinancialYear(params: {
   businessId: number
   fyId: number
   idempotencyKey?: string | null
+  nextFyId?: number | null
 }): Promise<CloseFinancialYearResult> {
   const { data, error } = await supabase.rpc('close_financial_year_tx', {
     p_business_id: params.businessId,
     p_fy_id: params.fyId,
     p_idempotency_key: params.idempotencyKey ?? null,
+    p_next_fy_id: params.nextFyId ?? null,
   })
 
   if (error) throw new Error(error.message || 'Financial year close RPC failed')

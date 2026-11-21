@@ -21,6 +21,9 @@ DECLARE
   v_branch_a BIGINT;
   v_branch_b BIGINT;
   v_fy_a BIGINT;
+  v_fy_2 BIGINT;
+  v_fy_3 BIGINT;
+  v_fy_end DATE;
   v_fy_b BIGINT;
   v_party_a BIGINT;
   v_party_b BIGINT;
@@ -28,15 +31,24 @@ DECLARE
   v_acc_cash BIGINT;
   v_acc_bank BIGINT;
   v_acc_debtors BIGINT;
+  v_acc_inv BIGINT;
+  v_acc_cgst BIGINT;
+  v_acc_sgst BIGINT;
   v_acc_capital BIGINT;
   v_acc_reserves BIGINT;
   v_acc_sales BIGINT;
+  v_acc_freight_inc BIGINT;
+  v_acc_cogs BIGINT;
   v_acc_expense BIGINT;
   v_acc_b_cash BIGINT;
   v_acc_b_sales BIGINT;
 
   v_res JSONB;
   v_sales_vch_id BIGINT;
+  v_compound_inv_id BIGINT;
+  v_compound_rcpt_id BIGINT;
+  v_fy1_profit NUMERIC;
+  v_fy3_reserves NUMERIC;
   v_exp_vch_id BIGINT;
   v_rev_target_id BIGINT;
   v_rev_vch_id BIGINT;
@@ -51,9 +63,11 @@ DECLARE
     'public.post_voucher_tx(bigint, bigint, text, date, jsonb, text, text, bigint, character, numeric, uuid, bigint)',
     'public.reverse_voucher_tx(bigint, bigint, date, text, uuid)',
     'public.allocate_bill_payment_tx(bigint, bigint, bigint, numeric, date, uuid)',
-    'public.verify_opening_balances(bigint)',
+    'public.set_opening_balance_tx(bigint, bigint, bigint, numeric, numeric, bigint, bigint, character, text, text)',
+    'public.verify_subledger_control_tieout(bigint, bigint)',
+    'public.verify_opening_balances(bigint, bigint)',
     'public.verify_trial_balance(bigint, bigint)',
-    'public.close_financial_year_tx(bigint, bigint, uuid)'
+    'public.close_financial_year_tx(bigint, bigint, uuid, bigint)'
   ];
 BEGIN
   -- ------------------------------------------------------------------
@@ -109,10 +123,23 @@ BEGIN
   SELECT id INTO v_acc_cash FROM public.accounts WHERE business_id = v_biz_a AND code = '1000';
   SELECT id INTO v_acc_bank FROM public.accounts WHERE business_id = v_biz_a AND code = '1010';
   SELECT id INTO v_acc_debtors FROM public.accounts WHERE business_id = v_biz_a AND code = '1100';
+  SELECT id INTO v_acc_inv FROM public.accounts WHERE business_id = v_biz_a AND code = '1200';
+  SELECT id INTO v_acc_cgst FROM public.accounts WHERE business_id = v_biz_a AND code = '2100';
+  SELECT id INTO v_acc_sgst FROM public.accounts WHERE business_id = v_biz_a AND code = '2110';
   SELECT id INTO v_acc_capital FROM public.accounts WHERE business_id = v_biz_a AND code = '3000';
   SELECT id INTO v_acc_reserves FROM public.accounts WHERE business_id = v_biz_a AND code = '3100';
   SELECT id INTO v_acc_sales FROM public.accounts WHERE business_id = v_biz_a AND code = '4000';
+  SELECT id INTO v_acc_freight_inc FROM public.accounts WHERE business_id = v_biz_a AND code = '4410';
+  SELECT id INTO v_acc_cogs FROM public.accounts WHERE business_id = v_biz_a AND code = '5100';
   SELECT id INTO v_acc_expense FROM public.accounts WHERE business_id = v_biz_a AND code = '5300';
+
+  -- C3: Confirm 4410 Freight & Packing Recovery is classified as 'income' and 5310 as 'expense'
+  IF NOT EXISTS (SELECT 1 FROM public.accounts WHERE id = v_acc_freight_inc AND account_group = 'income') THEN
+    RAISE EXCEPTION 'FAIL: 4410 Freight & Packing Recovery must be classified as income';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.accounts WHERE business_id = v_biz_a AND code = '5310' AND account_group = 'expense') THEN
+    RAISE EXCEPTION 'FAIL: 5310 Bardana & Packing Expense must be classified as expense';
+  END IF;
 
   -- System account cannot be deleted
   v_failed := FALSE;
@@ -412,6 +439,55 @@ BEGIN
   IF NOT v_failed THEN RAISE EXCEPTION 'FAIL: Reversing an allocated invoice was allowed'; END IF;
 
   -- ==================================================================
+  -- TEST 5B (C1): Compound Sales Voucher Party Control-Account Cap
+  -- Voucher total = ₹19,025 (DR Debtors ₹11,025 + DR COGS ₹8,000),
+  -- but Customer A owes ONLY ₹11,025. Allocating ₹11,026 MUST fail!
+  -- ==================================================================
+  v_res := public.post_voucher_tx(
+    v_biz_a, v_branch_a, 'SALES', CURRENT_DATE,
+    jsonb_build_array(
+      jsonb_build_object('account_id', v_acc_debtors, 'debit', 11025, 'credit', 0),
+      jsonb_build_object('account_id', v_acc_sales, 'debit', 0, 'credit', 10000),
+      jsonb_build_object('account_id', v_acc_freight_inc, 'debit', 0, 'credit', 500),
+      jsonb_build_object('account_id', v_acc_cgst, 'debit', 0, 'credit', 262.50),
+      jsonb_build_object('account_id', v_acc_sgst, 'debit', 0, 'credit', 262.50),
+      jsonb_build_object('account_id', v_acc_cogs, 'debit', 8000, 'credit', 0),
+      jsonb_build_object('account_id', v_acc_inv, 'debit', 0, 'credit', 8000)
+    ),
+    'Compound Invoice + COGS (C1)', 'SALES_INVOICE', 102, 'INR', 1.0, NULL, v_party_a
+  );
+  v_compound_inv_id := (v_res->>'voucher_id')::BIGINT;
+
+  v_res := public.post_voucher_tx(
+    v_biz_a, v_branch_a, 'RECEIPT', CURRENT_DATE,
+    jsonb_build_array(
+      jsonb_build_object('account_id', v_acc_bank, 'debit', 12000, 'credit', 0),
+      jsonb_build_object('account_id', v_acc_debtors, 'debit', 0, 'credit', 12000)
+    ),
+    'Customer A large receipt', NULL, NULL, 'INR', 1.0, NULL, v_party_a
+  );
+  v_compound_rcpt_id := (v_res->>'voucher_id')::BIGINT;
+
+  -- Allocating ₹11,026 (> ₹11,025 party control line, even though voucher total is ₹19,025) MUST fail
+  v_failed := FALSE;
+  BEGIN
+    PERFORM public.allocate_bill_payment_tx(v_biz_a, v_compound_inv_id, v_compound_rcpt_id, 11026, CURRENT_DATE);
+  EXCEPTION WHEN raise_exception THEN v_failed := TRUE; END;
+  IF NOT v_failed THEN RAISE EXCEPTION 'FAIL: C1 violation — compound voucher allowed allocation above party receivable ₹11,025'; END IF;
+
+  -- Allocating exact ₹11,025 succeeds (invoice_remaining = 0, settlement_remaining = 975)
+  v_res := public.allocate_bill_payment_tx(v_biz_a, v_compound_inv_id, v_compound_rcpt_id, 11025, CURRENT_DATE);
+  IF (v_res->>'invoice_remaining')::NUMERIC <> 0 OR (v_res->>'settlement_remaining')::NUMERIC <> 975 THEN
+    RAISE EXCEPTION 'FAIL: C1 compound allocation remainder mismatch: %', v_res;
+  END IF;
+
+  -- Signed Subledger-to-GL Control Tie-Out MUST pass
+  v_res := public.verify_subledger_control_tieout(v_biz_a, v_fy_a);
+  IF (v_res->>'balanced')::BOOLEAN IS NOT TRUE THEN
+    RAISE EXCEPTION 'FAIL: Subledger control tie-out failed: %', v_res;
+  END IF;
+
+  -- ==================================================================
   -- TEST 6: Opening Balance Verification & FY Close Guards
   -- ==================================================================
   -- Unbalanced opening balance MUST block FY close
@@ -494,11 +570,69 @@ BEGIN
   IF NOT v_failed THEN RAISE EXCEPTION 'FAIL: Cross-company voucher post succeeded'; END IF;
 
   -- ==================================================================
-  -- TEST 8: Financial Year Close & Post-Lock Rejection
+  -- TEST 8 (C2): Two Consecutive FY Closures (FY 1 -> FY 2 -> FY 3),
+  --              Permanent vs. Nominal Carry-Forward & Post-Lock Guards
   -- ==================================================================
-  v_res := public.close_financial_year_tx(v_biz_a, v_fy_a);
-  IF (v_res->>'is_locked')::BOOLEAN IS NOT TRUE OR (v_res->>'net_profit')::NUMERIC <> 7000 THEN
-    RAISE EXCEPTION 'FAIL: FY close did not lock or wrong net profit (expected 7000): %', v_res;
+  SELECT end_date INTO v_fy_end FROM public.financial_years WHERE id = v_fy_a;
+
+  -- Create FY 2 and FY 3 sequentially
+  INSERT INTO public.financial_years (business_id, label, start_date, end_date, is_active, is_locked)
+  VALUES (v_biz_a, 'FY Next-1', v_fy_end + 1, (v_fy_end + INTERVAL '1 year')::DATE, FALSE, FALSE)
+  RETURNING id INTO v_fy_2;
+
+  INSERT INTO public.financial_years (business_id, label, start_date, end_date, is_active, is_locked)
+  VALUES (v_biz_a, 'FY Next-2', (v_fy_end + INTERVAL '1 year')::DATE + 1, (v_fy_end + INTERVAL '2 years')::DATE, FALSE, FALSE)
+  RETURNING id INTO v_fy_3;
+
+  -- Close FY 1 -> carries forward permanent accounts + open-bill snapshots into FY 2
+  -- FY 1 Net Profit: (10,000 + 10,000 Sales + 500 Freight Inc) - (3,000 Expense + 8,000 COGS) = 9,500
+  v_res := public.close_financial_year_tx(v_biz_a, v_fy_a, NULL, v_fy_2);
+  v_fy1_profit := (v_res->>'net_profit')::NUMERIC;
+  IF (v_res->>'is_locked')::BOOLEAN IS NOT TRUE OR v_fy1_profit <> 9500 THEN
+    RAISE EXCEPTION 'FAIL: FY 1 close did not lock or wrong net profit (expected 9500): %', v_res;
+  END IF;
+
+  -- Verify FY 2 opening balances are balanced and contain ZERO nominal (income/expense) accounts
+  v_res := public.verify_opening_balances(v_biz_a, v_fy_2);
+  IF (v_res->>'balanced')::BOOLEAN IS NOT TRUE THEN
+    RAISE EXCEPTION 'FAIL: FY 2 carried-forward opening balances unbalanced: %', v_res;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.account_opening_balances aob
+    JOIN public.accounts a ON a.id = aob.account_id
+    WHERE aob.business_id = v_biz_a AND aob.fy_id = v_fy_2 AND a.account_group IN ('income', 'expense')
+  ) THEN
+    RAISE EXCEPTION 'FAIL: Nominal (income/expense) account leaked into FY 2 opening balances';
+  END IF;
+
+  -- Post a FY 2 profit voucher (DR Bank ₹4,000 / CR Sales ₹4,000) and close FY 2 -> FY 3
+  PERFORM public.post_voucher_tx(
+    v_biz_a, v_branch_a, 'SALES', v_fy_end + 10,
+    jsonb_build_array(
+      jsonb_build_object('account_id', v_acc_bank, 'debit', 4000, 'credit', 0),
+      jsonb_build_object('account_id', v_acc_sales, 'debit', 0, 'credit', 4000)
+    ),
+    'FY 2 Cash Sale'
+  );
+
+  v_res := public.close_financial_year_tx(v_biz_a, v_fy_2, NULL, v_fy_3);
+  IF (v_res->>'is_locked')::BOOLEAN IS NOT TRUE OR (v_res->>'net_profit')::NUMERIC <> 4000 THEN
+    RAISE EXCEPTION 'FAIL: FY 2 close failed or wrong profit (expected 4000): %', v_res;
+  END IF;
+
+  -- Verify FY 3 Retained Earnings = FY 1 Profit (9,500) + FY 2 Profit (4,000) = 13,500
+  SELECT opening_base_credit INTO v_fy3_reserves
+  FROM public.account_opening_balances
+  WHERE business_id = v_biz_a AND fy_id = v_fy_3 AND account_id = v_acc_reserves;
+
+  IF COALESCE(v_fy3_reserves, 0) <> 13500 THEN
+    RAISE EXCEPTION 'FAIL: Expected FY 3 Retained Earnings 13500, got %', v_fy3_reserves;
+  END IF;
+
+  v_res := public.verify_opening_balances(v_biz_a, v_fy_3);
+  IF (v_res->>'balanced')::BOOLEAN IS NOT TRUE THEN
+    RAISE EXCEPTION 'FAIL: FY 3 carried-forward opening balances unbalanced: %', v_res;
   END IF;
 
   -- Posting into closed FY MUST fail

@@ -626,6 +626,7 @@ export interface Account {
   name: string
   account_group: AccountGroup
   sub_group?: string | null
+  account_sub_ledger_type?: 'NONE' | 'PARTY' | 'BANK' | 'CASH' | 'TAX' | 'INVENTORY'
   party_id?: number | null
   opening_balance: number
   opening_balance_type: BalanceType
@@ -765,4 +766,68 @@ export interface CloseFinancialYearResult {
   net_profit: number
   closing_voucher_id: number | null
   closing_voucher_no: string | null
+  next_fy_id?: number | null
+  carried_accounts?: number
+  carried_open_bills?: number
+}
+
+export type PartyBillRole =
+  | 'RECEIVABLE_BILL'
+  | 'PAYABLE_BILL'
+  | 'RECEIVABLE_SETTLEMENT'
+  | 'PAYABLE_SETTLEMENT'
+  | 'ADVANCE_RECEIVED'
+  | 'ADVANCE_PAID'
+
+export interface PartySubledgerBill {
+  id: number
+  business_id: number
+  branch_id: number
+  origin_fy_id: number
+  voucher_id: number
+  voucher_entry_id: number
+  account_id: number
+  party_id: number
+  bill_role: PartyBillRole
+  normal_side: BalanceType
+  bill_no: string
+  document_date: string
+  due_date?: string | null
+  currency_code: string
+  exchange_rate: number
+  original_txn_amount: number
+  original_base_amount: number
+  allocated_txn_amount: number
+  allocated_base_amount: number
+  remaining_txn_amount: number
+  remaining_base_amount: number
+  status: 'open' | 'partially_settled' | 'settled' | 'reversed'
+  created_at: string
+  updated_at: string
+}
+
+export interface AccountOpeningBalance {
+  id: number
+  business_id: number
+  fy_id: number
+  account_id: number
+  branch_id?: number | null
+  party_id?: number | null
+  currency_code: string
+  opening_txn_debit: number
+  opening_txn_credit: number
+  opening_base_debit: number
+  opening_base_credit: number
+  source_type: 'MANUAL' | 'FY_CARRY_FORWARD' | 'RELY_MIGRATION'
+  source_fy_id?: number | null
+  source_ref?: string | null
+  created_by: string
+  created_at: string
+}
+
+export interface SubledgerControlTieoutReport {
+  balanced: boolean
+  fy_id: number
+  allocation_cache_mismatches: number
+  control_account_mismatches: number
 }
