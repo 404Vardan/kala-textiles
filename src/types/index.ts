@@ -602,3 +602,158 @@ export interface AdminSettings {
   created_at: string
   updated_at: string
 }
+
+
+// Stage 3: Kala Finance / Accounting Core types
+export type AccountGroup = 'asset' | 'liability' | 'equity' | 'income' | 'expense'
+export type BalanceType = 'DR' | 'CR'
+export type VoucherType =
+  | 'SALES'
+  | 'PURCHASE'
+  | 'SALES_RETURN'
+  | 'PURCHASE_RETURN'
+  | 'RECEIPT'
+  | 'PAYMENT'
+  | 'JOURNAL'
+  | 'CONTRA'
+  | 'REVERSAL'
+export type VoucherStatus = 'draft' | 'posted'
+
+export interface Account {
+  id: number
+  business_id: number
+  code: string
+  name: string
+  account_group: AccountGroup
+  sub_group?: string | null
+  party_id?: number | null
+  opening_balance: number
+  opening_balance_type: BalanceType
+  is_system: boolean
+  is_active: boolean
+  row_version: number
+  created_at: string
+  updated_at: string
+}
+
+export interface CostCenter {
+  id: number
+  business_id: number
+  code: string
+  name: string
+  is_active: boolean
+  row_version: number
+  created_at: string
+  updated_at: string
+}
+
+export interface Voucher {
+  id: number
+  business_id: number
+  branch_id: number
+  fy_id: number
+  voucher_no: string
+  voucher_type: VoucherType
+  voucher_date: string
+  currency_code: string
+  exchange_rate: number
+  ref_doc_type?: string | null
+  ref_doc_id?: number | null
+  reversed_voucher_id?: number | null
+  narration?: string | null
+  total_amount: number
+  base_total_amount: number
+  status: VoucherStatus
+  idempotency_key?: string | null
+  created_by: string
+  posted_at?: string | null
+  created_at: string
+}
+
+export interface VoucherEntry {
+  id: number
+  business_id: number
+  voucher_id: number
+  account_id: number
+  cost_center_id?: number | null
+  debit: number
+  credit: number
+  base_debit: number
+  base_credit: number
+  line_narration?: string | null
+}
+
+export interface VoucherEntryInput {
+  account_id: number
+  debit: number
+  credit: number
+  cost_center_id?: number | null
+  narration?: string | null
+}
+
+export interface BillAllocation {
+  id: number
+  business_id: number
+  invoice_voucher_id: number
+  settlement_voucher_id: number
+  allocated_amount: number
+  allocation_date: string
+  idempotency_key?: string | null
+  created_by: string
+  created_at: string
+}
+
+export interface PostVoucherResult {
+  success: boolean
+  voucher_id: number
+  voucher_no: string
+  voucher_type: VoucherType
+  fy_id: number
+  total_amount: number
+  base_total_amount: number
+  status: VoucherStatus
+}
+
+export interface ReverseVoucherResult {
+  success: boolean
+  reversal_voucher_id: number
+  reversal_voucher_no: string
+  reversed_voucher_id: number
+  status: VoucherStatus
+}
+
+export interface AllocateBillPaymentResult {
+  success: boolean
+  allocation_id: number
+  invoice_voucher_id: number
+  settlement_voucher_id: number
+  allocated_amount: number
+  invoice_remaining: number
+  settlement_remaining: number
+}
+
+export interface OpeningBalanceReport {
+  balanced: boolean
+  total_debit: number
+  total_credit: number
+  diff: number
+}
+
+export interface TrialBalanceReport {
+  balanced: boolean
+  fy_id: number
+  voucher_count: number
+  total_debit: number
+  total_credit: number
+  diff: number
+}
+
+export interface CloseFinancialYearResult {
+  success: boolean
+  fy_id: number
+  label: string
+  is_locked: boolean
+  net_profit: number
+  closing_voucher_id: number | null
+  closing_voucher_no: string | null
+}
