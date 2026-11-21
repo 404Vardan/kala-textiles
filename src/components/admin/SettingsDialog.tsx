@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -8,8 +8,17 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { useAuth } from '@/contexts/AuthContext'
 import { fetchAdminSettings, updateBusinessWhatsappNumber, updateUserPassword } from '@/services/adminSettings'
-import { CheckCircle2, AlertCircle, Phone, Lock } from 'lucide-react'
+import {
+  listBusinessMembers,
+  inviteTeamMember,
+  updateMemberRole,
+  removeBusinessMember,
+  type TeamMember,
+} from '@/services/team'
+import type { UserRole } from '@/types'
+import { CheckCircle2, AlertCircle, UserPlus, Trash2 } from 'lucide-react'
 
 interface SettingsDialogProps {
   open: boolean
@@ -17,6 +26,8 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
+  const { user, isOwner } = useAuth()
+
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [whatsapp, setWhatsapp] = useState('')
@@ -25,8 +36,28 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [whatsappLoading, setWhatsappLoading] = useState(false)
   const [loadingSettings, setLoadingSettings] = useState(false)
 
+  const [members, setMembers] = useState<TeamMember[]>([])
+  const [loadingTeam, setLoadingTeam] = useState(false)
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRole, setInviteRole] = useState<UserRole>('staff')
+  const [inviting, setInviting] = useState(false)
+  const [memberActionId, setMemberActionId] = useState<string | null>(null)
+
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+
+  const loadTeam = useCallback(async () => {
+    if (!isOwner) return
+    setLoadingTeam(true)
+    try {
+      const list = await listBusinessMembers()
+      setMembers(list)
+    } catch (err: any) {
+      setError(err?.message || 'Unable to load team members.')
+    } finally {
+      setLoadingTeam(false)
+    }
+  }, [isOwner])
 
   useEffect(() => {
     if (!open) return
@@ -40,17 +71,19 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         if (!active) return
         setWhatsapp(settings.whatsapp_number || '')
       })
-      .catch(() => {
-        // Non-blocking if settings haven't been initialized yet
-      })
+      .catch(() => {})
       .finally(() => {
         if (active) setLoadingSettings(false)
       })
 
+    if (isOwner) {
+      void loadTeam()
+    }
+
     return () => {
       active = false
     }
-  }, [open])
+  }, [open, isOwner, loadTeam])
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -98,28 +131,87 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     }
   }
 
-  const isBusy = passwordLoading || whatsappLoading
+  const handleInviteMember = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    setMessage('')
+
+    const cleanEmail = inviteEmail.trim().toLowerCase()
+    if (!cleanEmail) {
+      setError('Please enter an email address to invite.')
+      return
+    }
+
+    setInviting(true)
+    try {
+      const res = await inviteTeamMember(cleanEmail, inviteRole)
+      setInviteEmail('')
+      setInviteRole('staff')
+      setMessage(
+        res.invited
+          ? `Invitation email sent to ${res.email} (${res.role}).`
+          : `${res.email} has been added to your team (${res.role}).`
+      )
+      await loadTeam()
+    } catch (err: any) {
+      setError(err?.message || 'Failed to invite team member.')
+    } finally {
+      setInviting(false)
+    }
+  }
+
+  const handleRoleChange = async (member: TeamMember, nextRole: UserRole) => {
+    if (member.role === nextRole) return
+    setError('')
+    setMessage('')
+    setMemberActionId(member.user_id)
+    try {
+      await updateMemberRole(member.user_id, nextRole)
+      setMessage(`Updated ${member.email || 'member'} to ${nextRole}.`)
+      await loadTeam()
+    } catch (err: any) {
+      setError(err?.message || 'Failed to update member role.')
+    } finally {
+      setMemberActionId(null)
+    }
+  }
+
+  const handleRemoveMember = async (member: TeamMember) => {
+    setError('')
+    setMessage('')
+    setMemberActionId(member.user_id)
+    try {
+      await removeBusinessMember(member.user_id)
+      setMessage(`Removed ${member.email || 'member'} from your team.`)
+      await loadTeam()
+    } catch (err: any) {
+      setError(err?.message || 'Failed to remove team member.')
+    } finally {
+      setMemberActionId(null)
+    }
+  }
+
+  const ownerCount = members.filter((m) => m.role === 'owner').length
+  const isBusy = passwordLoading || whatsappLoading || inviting || memberActionId !== null
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[460px]">
+      <DialogContent className="sm:max-w-[540px] max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-lg font-bold text-stone-900">
-            Business & Account Settings
-          </DialogTitle>
+          <DialogTitle>Business &amp; Account Settings</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-5 pt-1">
+        <div className="space-y-4 pt-1">
           {error && (
-            <div className="flex items-center gap-2 text-xs font-medium text-red-700 bg-red-50 border border-red-200 px-3.5 py-2.5 rounded-lg">
+            <div className="flex items-center gap-2 text-xs font-medium text-[#B42318] bg-white border border-[#B42318] px-3 py-2.5 rounded-[6px]">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
           {message && (
-            <div className="flex items-center gap-2 text-xs font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 rounded-lg">
-              <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+            <div className="flex items-center gap-2 text-xs font-medium text-[#1F7A4D] bg-white border border-[#1F7A4D] px-3 py-2.5 rounded-[6px]">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
               <span>{message}</span>
             </div>
           )}
@@ -127,21 +219,16 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           {/* Business WhatsApp Contact */}
           <form
             onSubmit={handleUpdateWhatsapp}
-            className="p-4 rounded-xl border border-stone-200/80 bg-stone-50/60 space-y-3"
+            className="p-4 rounded-[6px] border border-[#E3E5EA] bg-white space-y-3"
           >
-            <div className="flex items-start gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center shrink-0 mt-0.5">
-                <Phone className="w-4 h-4" />
-              </div>
-              <div>
-                <h3 className="font-bold text-sm text-stone-900">Business WhatsApp Contact</h3>
-                <p className="text-xs text-stone-500 mt-0.5 leading-relaxed">
-                  Used on buyer QR order review screens so customers can share their order request directly with your shop on WhatsApp.
-                </p>
-              </div>
+            <div>
+              <h3 className="font-semibold text-sm text-[#1A1D24]">Business WhatsApp Contact</h3>
+              <p className="text-xs text-[#667085] mt-0.5">
+                Used on buyer QR order review screens for direct WhatsApp sharing.
+              </p>
             </div>
 
-            <div className="space-y-1.5 pt-1">
+            <div className="space-y-1.5">
               <Label htmlFor="settings-whatsapp">WhatsApp Number (with country code)</Label>
               <div className="flex gap-2">
                 <Input
@@ -150,34 +237,134 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   value={whatsapp}
                   onChange={(e) => setWhatsapp(e.target.value)}
                   disabled={isBusy || loadingSettings}
-                  className="bg-white"
                 />
                 <Button
                   type="submit"
                   disabled={isBusy || loadingSettings || !whatsapp.trim()}
-                  className="bg-stone-900 hover:bg-stone-800 text-white shrink-0"
+                  className="shrink-0"
                 >
-                  {whatsappLoading ? 'Saving...' : 'Save Number'}
+                  {whatsappLoading ? 'Saving...' : 'Save'}
                 </Button>
               </div>
             </div>
           </form>
 
+          {/* Team Management (Owner Only) */}
+          {isOwner && (
+            <div className="p-4 rounded-[6px] border border-[#E3E5EA] bg-white space-y-4">
+              <div>
+                <h3 className="font-semibold text-sm text-[#1A1D24]">Team Members</h3>
+                <p className="text-xs text-[#667085] mt-0.5">
+                  Invite staff or co-owners by email and manage business roles.
+                </p>
+              </div>
+
+              <form onSubmit={handleInviteMember} className="space-y-1.5">
+                <Label htmlFor="invite-email">Invite Team Member</Label>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Input
+                    id="invite-email"
+                    type="email"
+                    placeholder="staff@example.com"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    disabled={isBusy}
+                    className="flex-1"
+                  />
+                  <select
+                    aria-label="Invite role"
+                    value={inviteRole}
+                    onChange={(e) => setInviteRole(e.target.value as UserRole)}
+                    disabled={isBusy}
+                    className="h-9 bg-white border border-[#E3E5EA] rounded-[6px] px-2.5 text-xs font-medium text-[#1A1D24]"
+                  >
+                    <option value="staff">Staff</option>
+                    <option value="owner">Owner</option>
+                  </select>
+                  <Button
+                    type="submit"
+                    disabled={isBusy || !inviteEmail.trim()}
+                    className="shrink-0"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    <span>{inviting ? 'Inviting...' : 'Invite'}</span>
+                  </Button>
+                </div>
+              </form>
+
+              <div className="pt-1">
+                {loadingTeam ? (
+                  <p className="text-xs text-[#667085]">Loading team members...</p>
+                ) : members.length === 0 ? (
+                  <p className="text-xs text-[#667085]">No team members found.</p>
+                ) : (
+                  <div className="divide-y divide-[#E3E5EA] rounded-[6px] border border-[#E3E5EA] overflow-hidden">
+                    {members.map((m) => {
+                      const isLastOwner = m.role === 'owner' && ownerCount <= 1
+                      const isSelf = m.user_id === user?.id
+                      const rowBusy = memberActionId === m.user_id
+
+                      return (
+                        <div
+                          key={m.user_id}
+                          className="flex items-center justify-between gap-2 px-3 py-2.5 text-xs bg-white"
+                        >
+                          <div className="min-w-0">
+                            <p className="font-medium text-[#1A1D24] truncate">
+                              {m.email || m.user_id}
+                              {isSelf && (
+                                <span className="ml-1.5 text-[11px] text-[#667085]">(You)</span>
+                              )}
+                            </p>
+                            {!m.email_confirmed_at && (
+                              <p className="text-[11px] text-[#8A580F]">Invite pending</p>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <select
+                              aria-label={`Role for ${m.email}`}
+                              value={m.role}
+                              onChange={(e) => handleRoleChange(m, e.target.value as UserRole)}
+                              disabled={isBusy || rowBusy || isLastOwner}
+                              title={isLastOwner ? 'Cannot demote the last owner' : 'Change role'}
+                              className="h-8 bg-white border border-[#E3E5EA] rounded-[6px] px-2 text-xs font-medium text-[#1A1D24] disabled:opacity-50"
+                            >
+                              <option value="owner">Owner</option>
+                              <option value="staff">Staff</option>
+                            </select>
+
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              disabled={isBusy || rowBusy || isLastOwner}
+                              title={isLastOwner ? 'Cannot remove the last owner' : 'Remove member'}
+                              onClick={() => handleRemoveMember(m)}
+                              className="h-8 w-8 p-0 text-[#B42318] disabled:opacity-40"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Change Auth Password */}
           <form
             onSubmit={handleChangePassword}
-            className="p-4 rounded-xl border border-stone-200/80 bg-stone-50/60 space-y-3.5"
+            className="p-4 rounded-[6px] border border-[#E3E5EA] bg-white space-y-3"
           >
-            <div className="flex items-start gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-orange-50 border border-orange-200 text-orange-700 flex items-center justify-center shrink-0 mt-0.5">
-                <Lock className="w-4 h-4" />
-              </div>
-              <div>
-                <h3 className="font-bold text-sm text-stone-900">Update Account Password</h3>
-                <p className="text-xs text-stone-500 mt-0.5">
-                  Change the password for your currently signed-in account.
-                </p>
-              </div>
+            <div>
+              <h3 className="font-semibold text-sm text-[#1A1D24]">Update Account Password</h3>
+              <p className="text-xs text-[#667085] mt-0.5">
+                Change the password for your signed-in account.
+              </p>
             </div>
 
             <div className="space-y-1.5">
@@ -189,7 +376,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 disabled={isBusy}
-                className="bg-white"
               />
             </div>
 
@@ -202,7 +388,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 disabled={isBusy}
-                className="bg-white"
               />
             </div>
 
@@ -210,7 +395,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               <Button
                 type="submit"
                 disabled={isBusy || !newPassword || !confirmPassword}
-                className="bg-orange-700 hover:bg-orange-800 text-white"
               >
                 {passwordLoading ? 'Updating...' : 'Update Password'}
               </Button>

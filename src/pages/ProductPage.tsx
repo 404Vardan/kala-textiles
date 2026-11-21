@@ -21,17 +21,12 @@ import { formatCurrency } from '@/utils/formatters'
 import {
   ChevronLeft,
   ChevronRight,
-  Send,
   ArrowLeft,
-  Package,
   ShoppingBag,
   CheckCircle2,
-  Warehouse,
-  Store,
   ClipboardList,
   ArrowRight,
   Film,
-  Layers,
 } from 'lucide-react'
 
 export default function ProductPage() {
@@ -52,12 +47,10 @@ export default function ProductPage() {
   const [error, setError] = useState('')
   const [currentSlide, setCurrentSlide] = useState(0)
 
-  // Customer Order List controls
   const [orderSets, setOrderSets] = useState(1)
   const [addedFeedback, setAddedFeedback] = useState('')
   const [cartSummary, setCartSummary] = useState(() => getOrderRequestCartSummary(normalizedSlug))
 
-  // Staff Operations state (authenticated staff of same business only)
   const isAuthorizedStaffForSlug = Boolean(
     user &&
       isStaff &&
@@ -72,7 +65,6 @@ export default function ProductPage() {
   const [staffSetsToAdd, setStaffSetsToAdd] = useState(1)
   const [staffAddedMsg, setStaffAddedMsg] = useState('')
 
-  // Inquiry form
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [message, setMessage] = useState('')
@@ -116,7 +108,6 @@ export default function ProductPage() {
     }
   }
 
-  // Load private inventory & product record when authenticated staff for this business views the page
   useEffect(() => {
     if (!isAuthorizedStaffForSlug || !product?.design_no) {
       setStaffProduct(null)
@@ -170,7 +161,7 @@ export default function ProductPage() {
     const clamped = clampRequestSets(orderSets)
     addToOrderRequestCart(normalizedSlug, product.design_no, clamped)
     syncCartSummary()
-    setAddedFeedback(`Added ${clamped} ${clamped === 1 ? 'set' : 'sets'} to your Order List`)
+    setAddedFeedback(`Added ${clamped} ${clamped === 1 ? 'set' : 'sets'} to your order list.`)
     setOrderSets(1)
   }
 
@@ -179,7 +170,7 @@ export default function ProductPage() {
     const clamped = clampRequestSets(staffSetsToAdd)
     const updated = addProductToDraft(staffProduct, clamped)
     setStaffAddedMsg(
-      `Added to Draft Order (${updated.sets} ${updated.sets === 1 ? 'set' : 'sets'} total for ${staffProduct.design_no})`
+      `Added to draft order (${updated.sets} ${updated.sets === 1 ? 'set' : 'sets'} total).`
     )
     setStaffSetsToAdd(1)
   }
@@ -231,7 +222,6 @@ export default function ProductPage() {
       )
     : undefined
 
-  // Compute Godown & Shop Floor stock for Staff view
   const godownLoc = locations.find((l) => l.name.toLowerCase().includes('godown'))
   const shopLoc = locations.find((l) => l.name.toLowerCase().includes('shop'))
   const godownStock = godownLoc ? stockRows.find((s) => s.location_id === godownLoc.id) : undefined
@@ -245,26 +235,32 @@ export default function ProductPage() {
 
   const staffOrderPortalPath = isOwner ? '/admin?tab=orders&openDraft=1' : '/staff?openDraft=1'
 
+  const shopName = resolveBrandName(product?.business_name)
+  const shopLogoUrl =
+    (product as any)?.logo_url ||
+    (business?.slug?.toLowerCase() === normalizedSlug && typeof business?.settings?.logo_url === 'string'
+      ? business.settings.logo_url
+      : null)
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#f8f7f4] flex items-center justify-center">
-        <LoadingState message="Loading product details..." />
+      <div className="min-h-screen bg-[#F4F5F7] flex items-center justify-center px-4">
+        <LoadingState message="Loading product..." />
       </div>
     )
   }
 
   if (error || !product) {
     return (
-      <div className="min-h-screen bg-[#f8f7f4] flex items-center justify-center px-4">
-        <div className="bg-white border border-stone-200 rounded-xl p-8 max-w-md w-full shadow-2xs">
+      <div className="min-h-screen bg-[#F4F5F7] flex items-center justify-center px-4">
+        <div className="bg-white border border-[#E3E5EA] rounded-[6px] max-w-md w-full">
           <EmptyState
-            icon={Package}
-            title="Product Not Found"
-            description={`Design "${designNo}" could not be found in this catalog.`}
+            title={`Design "${designNo}" could not be found.`}
             action={
               <Link to="/">
-                <Button variant="outline" className="gap-1.5">
-                  <ArrowLeft className="w-4 h-4" /> Back to Home
+                <Button variant="outline" className="min-h-[44px]">
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>Back to Home</span>
                 </Button>
               </Link>
             }
@@ -276,61 +272,56 @@ export default function ProductPage() {
 
   return (
     <div
-      className={`min-h-screen bg-[#f8f7f4] text-stone-900 flex flex-col justify-between ${
-        cartSummary.totalDesigns > 0 ? 'pb-32' : ''
+      className={`min-h-screen bg-[#F4F5F7] text-[#1A1D24] flex flex-col justify-between ${
+        cartSummary.totalDesigns > 0 ? 'pb-24' : ''
       }`}
     >
-      {/* Commercial Header */}
-      <header className="bg-white border-b border-stone-200 sticky top-0 z-20">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
+      {/* Shop Header */}
+      <header className="bg-white border-b border-[#E3E5EA] sticky top-0 z-20">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
             <Link
               to="/"
               aria-label="Back to home"
-              className="w-9 h-9 rounded-lg border border-stone-200 flex items-center justify-center text-stone-600 hover:bg-stone-100 hover:text-stone-900 transition-colors shrink-0"
+              className="min-w-[44px] min-h-[44px] -ml-2 rounded-[6px] flex items-center justify-center text-[#1A1D24] hover:bg-[#F4F5F7] shrink-0"
             >
               <ArrowLeft className="w-4 h-4" />
             </Link>
-            <KalaLogo iconOnly size="sm" />
-            <div className="min-w-0">
-              <h1 className="font-extrabold text-base sm:text-lg text-stone-900 truncate leading-tight">
-                {resolveBrandName(product.business_name)}
-              </h1>
-              <p className="text-xs text-stone-500 truncate">
-                Wholesale Product Catalog • Design {product.design_no}
-              </p>
-            </div>
+            <KalaLogo
+              size="sm"
+              titleOverride={shopName}
+              logoUrl={shopLogoUrl}
+              showSubtitle={false}
+            />
           </div>
 
           {cartSummary.totalDesigns > 0 && (
             <Link
               to={`/${normalizedSlug}/order-request`}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold bg-orange-50 text-orange-800 border border-orange-200 px-3 py-1.5 rounded-lg hover:bg-orange-100 transition-colors shrink-0"
+              className="min-h-[44px] inline-flex items-center gap-1.5 text-xs font-semibold border border-[#E3E5EA] bg-white text-[#1E2A4A] px-3 rounded-[6px] hover:bg-[#F4F5F7] shrink-0 tabular-nums"
             >
-              <ShoppingBag className="w-3.5 h-3.5 text-orange-700" />
+              <ShoppingBag className="w-4 h-4" />
               <span>
-                {cartSummary.totalDesigns}{' '}
-                {cartSummary.totalDesigns === 1 ? 'Design' : 'Designs'} ·{' '}
-                {cartSummary.totalSets} {cartSummary.totalSets === 1 ? 'Set' : 'Sets'}
+                {cartSummary.totalDesigns} · {cartSummary.totalSets} sets
               </span>
             </Link>
           )}
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto w-full px-4 sm:px-6 py-6 sm:py-8 space-y-8 flex-1">
-        {/* Top Product Grid: Media Gallery (Left) + Wholesale Specs & Order Controls (Right) */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
-          {/* Media Gallery Column */}
+      <main className="max-w-5xl mx-auto w-full px-4 sm:px-6 py-5 sm:py-6 space-y-6 flex-1">
+        {/* Image Carousel First + Product Specs & Order Controls */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* Carousel Column (First on Mobile and Desktop) */}
           <div className="lg:col-span-7 space-y-3">
-            <div className="bg-white rounded-xl border border-stone-200 overflow-hidden shadow-2xs">
+            <div className="bg-white rounded-[6px] border border-[#E3E5EA] overflow-hidden">
               {media.length > 0 ? (
-                <div className="relative aspect-[4/3] bg-stone-900 flex items-center justify-center">
+                <div className="relative aspect-[4/3] bg-[#F4F5F7] flex items-center justify-center">
                   {media[currentSlide].media_type === 'video' ? (
                     <video
                       key={currentSlide}
                       src={media[currentSlide].media_url}
-                      className="w-full h-full object-contain bg-black"
+                      className="w-full h-full object-contain bg-[#1A1D24]"
                       controls
                       autoPlay
                       muted
@@ -340,7 +331,7 @@ export default function ProductPage() {
                       key={currentSlide}
                       src={media[currentSlide].media_url}
                       alt={`Design ${product.design_no}`}
-                      className="w-full h-full object-contain bg-stone-100"
+                      className="w-full h-full object-contain"
                     />
                   )}
 
@@ -350,7 +341,7 @@ export default function ProductPage() {
                         type="button"
                         onClick={prevSlide}
                         aria-label="Previous image"
-                        className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-stone-900/75 hover:bg-stone-900 text-white flex items-center justify-center transition-colors cursor-pointer"
+                        className="absolute left-2 top-1/2 -translate-y-1/2 min-w-[44px] min-h-[44px] rounded-[6px] bg-white border border-[#E3E5EA] text-[#1A1D24] hover:bg-[#F4F5F7] flex items-center justify-center cursor-pointer"
                       >
                         <ChevronLeft className="w-5 h-5" />
                       </button>
@@ -358,45 +349,41 @@ export default function ProductPage() {
                         type="button"
                         onClick={nextSlide}
                         aria-label="Next image"
-                        className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-stone-900/75 hover:bg-stone-900 text-white flex items-center justify-center transition-colors cursor-pointer"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 min-w-[44px] min-h-[44px] rounded-[6px] bg-white border border-[#E3E5EA] text-[#1A1D24] hover:bg-[#F4F5F7] flex items-center justify-center cursor-pointer"
                       >
                         <ChevronRight className="w-5 h-5" />
                       </button>
-                      <div className="absolute bottom-3 right-3 bg-stone-900/80 text-white text-xs font-medium px-2.5 py-1 rounded-md tabular-nums">
+                      <div className="absolute bottom-2.5 right-2.5 bg-white border border-[#E3E5EA] text-[#1A1D24] text-xs font-medium px-2.5 py-1 rounded-[6px] tabular-nums">
                         {currentSlide + 1} / {media.length}
                       </div>
                     </>
                   )}
                 </div>
               ) : (
-                <div className="aspect-[4/3] bg-stone-100 flex flex-col items-center justify-center gap-2 text-stone-400">
-                  <Package className="w-12 h-12 stroke-[1.5]" />
-                  <span className="text-xs font-medium text-stone-500">
-                    Design {product.design_no}
-                  </span>
+                <div className="aspect-[4/3] bg-[#F4F5F7] flex items-center justify-center text-sm text-[#667085]">
+                  No media available for Design {product.design_no}
                 </div>
               )}
             </div>
 
-            {/* Thumbnail Strip */}
             {media.length > 1 && (
-              <div className="flex gap-2.5 overflow-x-auto pb-1">
+              <div className="flex gap-2 overflow-x-auto pb-1">
                 {media.map((m, i) => (
                   <button
                     key={m.id || i}
                     type="button"
                     onClick={() => setCurrentSlide(i)}
                     aria-label={`View media ${i + 1}`}
-                    className={`relative shrink-0 w-16 h-16 sm:w-20 sm:h-20 rounded-lg overflow-hidden border-2 transition-all cursor-pointer ${
+                    className={`relative shrink-0 w-16 h-16 min-w-[44px] min-h-[44px] rounded-[6px] overflow-hidden border cursor-pointer ${
                       i === currentSlide
-                        ? 'border-orange-700 ring-2 ring-orange-700/20'
-                        : 'border-stone-200 opacity-75 hover:opacity-100'
+                        ? 'border-[#1E2A4A] border-2'
+                        : 'border-[#E3E5EA] opacity-75 hover:opacity-100'
                     }`}
                   >
                     {m.media_type === 'video' ? (
                       <>
                         <video src={m.media_url} className="w-full h-full object-cover" />
-                        <span className="absolute bottom-1 right-1 bg-stone-900/80 text-white p-0.5 rounded">
+                        <span className="absolute bottom-1 right-1 bg-[#1A1D24] text-white p-0.5 rounded-[4px]">
                           <Film className="w-3 h-3" />
                         </span>
                       </>
@@ -409,77 +396,63 @@ export default function ProductPage() {
             )}
           </div>
 
-          {/* Product Details & Ordering Column */}
-          <div className="lg:col-span-5 space-y-5">
-            <div className="bg-white rounded-xl border border-stone-200 shadow-2xs p-5 sm:p-6 space-y-5">
-              {/* Design Identifier & Metadata */}
-              <div className="space-y-2.5 border-b border-stone-100 pb-4">
+          {/* Specs & Order Controls Column */}
+          <div className="lg:col-span-5 space-y-4">
+            <div className="bg-white rounded-[6px] border border-[#E3E5EA] p-5 space-y-5">
+              {/* Large Design Number */}
+              <div className="space-y-2 border-b border-[#E3E5EA] pb-4">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-stone-500">
-                    Design Number
-                  </span>
+                  <span className="text-xs font-medium text-[#667085]">Design Number</span>
                   {existingCartItem && (
-                    <span className="inline-flex items-center gap-1 text-xs font-semibold bg-orange-50 text-orange-800 border border-orange-200 px-2.5 py-0.5 rounded-md">
-                      In Order List: {existingCartItem.sets}{' '}
-                      {existingCartItem.sets === 1 ? 'set' : 'sets'}
+                    <span className="text-xs font-semibold text-[#1E2A4A] border border-[#E3E5EA] px-2 py-0.5 rounded-[6px] tabular-nums">
+                      In list: {existingCartItem.sets} {existingCartItem.sets === 1 ? 'set' : 'sets'}
                     </span>
                   )}
                 </div>
 
-                <h2 className="text-2xl sm:text-3xl font-bold text-stone-900 tracking-tight">
+                <h1 className="text-3xl sm:text-4xl font-bold text-[#1A1D24] tracking-tight tabular-nums">
                   {product.design_no}
-                </h2>
+                </h1>
 
                 {(product.brand || product.collection_name || product.fabric) && (
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {product.brand && (
-                      <span className="bg-stone-100 text-stone-800 border border-stone-200 px-2.5 py-1 rounded-md text-xs font-semibold">
-                        Brand: {product.brand}
-                      </span>
-                    )}
-                    {product.collection_name && (
-                      <span className="bg-stone-100 text-stone-800 border border-stone-200 px-2.5 py-1 rounded-md text-xs font-semibold">
-                        {product.collection_name}
-                      </span>
-                    )}
-                    {product.fabric && (
-                      <span className="bg-orange-50 text-orange-800 border border-orange-200/80 px-2.5 py-1 rounded-md text-xs font-semibold">
-                        Fabric: {product.fabric}
-                      </span>
-                    )}
-                  </div>
+                  <p className="text-xs text-[#667085]">
+                    {[product.brand, product.collection_name, product.fabric]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </p>
                 )}
               </div>
 
-              {/* Wholesale Rate & Set Specification */}
-              <div className="grid grid-cols-2 gap-3 bg-stone-50 rounded-lg p-3.5 border border-stone-200/80">
+              {/* Rate & Pcs Per Set */}
+              <div className="grid grid-cols-2 gap-4 border-b border-[#E3E5EA] pb-4">
                 <div>
-                  <span className="text-xs font-medium text-stone-500 block">Wholesale Rate</span>
+                  <span className="text-xs font-medium text-[#667085] block">Wholesale Rate</span>
                   {product.rate ? (
-                    <div className="flex items-baseline gap-1 mt-0.5">
-                      <span className="text-xl sm:text-2xl font-bold text-orange-700 tabular-nums">
+                    <div className="flex items-baseline gap-1 mt-1">
+                      <span className="text-2xl font-semibold text-[#1A1D24] tabular-nums">
                         {formatCurrency(product.rate)}
                       </span>
-                      <span className="text-xs text-stone-500 font-medium">/ pc</span>
+                      <span className="text-xs text-[#667085]">/ pc</span>
                     </div>
                   ) : (
-                    <span className="text-sm font-semibold text-stone-700 mt-1 block">
-                      Rate on Inquiry
+                    <span className="text-sm font-medium text-[#1A1D24] mt-1 block">
+                      Rate on inquiry
                     </span>
                   )}
                 </div>
 
-                <div className="border-l border-stone-200 pl-3">
-                  <span className="text-xs font-medium text-stone-500 block">Set Packing</span>
-                  <div className="flex items-baseline gap-1 mt-0.5">
-                    <Layers className="w-3.5 h-3.5 text-stone-500 self-center mr-0.5" />
-                    <span className="text-base sm:text-lg font-bold text-stone-900 tabular-nums">
-                      {pcsPerSet} {pcsPerSet === 1 ? 'Pc' : 'Pcs'}
+                <div className="border-l border-[#E3E5EA] pl-4">
+                  <span className="text-xs font-medium text-[#667085] block">Pcs per Set</span>
+                  <div className="flex items-baseline gap-1 mt-1">
+                    <span className="text-2xl font-semibold text-[#1A1D24] tabular-nums">
+                      {pcsPerSet}
                     </span>
-                    <span className="text-xs text-stone-500">/ set</span>
+                    <span className="text-xs text-[#667085]">
+                      {pcsPerSet === 1 ? 'pc / set' : 'pcs / set'}
+                    </span>
                   </div>
                   {product.rate && pcsPerSet > 1 && (
-                    <span className="text-xs text-stone-500 block tabular-nums">
+                    <span className="text-xs text-[#667085] block tabular-nums mt-0.5">
                       {formatCurrency(product.rate * pcsPerSet)} / set
                     </span>
                   )}
@@ -487,20 +460,16 @@ export default function ProductPage() {
               </div>
 
               {product.description && (
-                <div className="text-sm text-stone-600 leading-relaxed bg-stone-50/60 p-3 rounded-lg border border-stone-200/60">
-                  {product.description}
-                </div>
+                <p className="text-sm text-[#667085] leading-relaxed">{product.description}</p>
               )}
 
-              {/* Buyer Order List Controls */}
-              <div className="pt-2 space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs font-semibold uppercase tracking-wider text-stone-700">
-                    Select Quantity (Sets)
-                  </Label>
-                  <span className="text-xs text-stone-500 font-medium tabular-nums">
-                    {orderSets} {orderSets === 1 ? 'set' : 'sets'} = {orderSets * pcsPerSet}{' '}
-                    {orderSets * pcsPerSet === 1 ? 'piece' : 'pieces'}
+              {/* Add to Order List */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-xs">
+                  <Label className="text-xs font-medium text-[#1A1D24]">Quantity (Sets)</Label>
+                  <span className="text-[#667085] tabular-nums">
+                    {orderSets} {orderSets === 1 ? 'set' : 'sets'} = {(orderSets * pcsPerSet).toLocaleString('en-IN')}{' '}
+                    pcs
                   </span>
                 </div>
 
@@ -519,122 +488,109 @@ export default function ProductPage() {
                     type="button"
                     size="lg"
                     onClick={handleAddToCustomerOrderList}
-                    className="flex-1 h-12 bg-orange-700 hover:bg-orange-800 text-white font-bold rounded-lg gap-2 text-sm sm:text-base shadow-xs"
+                    className="flex-1 min-h-[44px] h-11 font-semibold"
                   >
                     <ShoppingBag className="w-4 h-4" />
-                    <span>Add to Order List</span>
+                    <span>Add to order list</span>
                   </Button>
                 </div>
 
                 {addedFeedback && (
                   <div
                     role="status"
-                    className="flex items-center justify-between gap-2 bg-emerald-50 border border-emerald-200 text-emerald-900 px-3.5 py-2.5 rounded-lg text-xs sm:text-sm"
+                    className="flex items-center justify-between gap-2 bg-white border border-[#1F7A4D] text-[#1F7A4D] px-3 py-2.5 rounded-[6px] text-xs font-medium"
                   >
-                    <div className="flex items-center gap-2 font-medium">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                    <div className="flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
                       <span>{addedFeedback}</span>
                     </div>
                     <Link
                       to={`/${normalizedSlug}/order-request`}
-                      className="text-xs font-bold text-emerald-900 underline shrink-0"
+                      className="font-semibold underline shrink-0 min-h-[44px] inline-flex items-center"
                     >
-                      Review Order →
+                      Review Order
                     </Link>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Authenticated Staff Operations Card */}
+            {/* Staff Live Stock & Draft Section (White Surface, 1px Border) */}
             {isAuthorizedStaffForSlug && (
-              <div className="bg-stone-900 text-white rounded-xl shadow-sm border border-stone-800 p-5 space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-800 pb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="bg-orange-600/20 text-orange-400 border border-orange-500/30 text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-md">
-                      Staff Mode
-                    </span>
-                    <h3 className="font-bold text-sm sm:text-base">
-                      Live Inventory & Staff Order
-                    </h3>
+              <div className="bg-white rounded-[6px] border border-[#E3E5EA] p-5 space-y-4">
+                <div className="flex items-center justify-between gap-2 border-b border-[#E3E5EA] pb-3">
+                  <div>
+                    <span className="text-xs font-semibold text-[#1E2A4A]">Staff Inventory</span>
+                    <h2 className="text-sm font-semibold text-[#1A1D24]">Live Stock &amp; Draft Order</h2>
                   </div>
-
                   {staffDraftDesigns > 0 && (
-                    <button
+                    <Button
                       type="button"
+                      variant="outline"
+                      size="sm"
                       onClick={() => navigate(staffOrderPortalPath)}
-                      className="inline-flex items-center gap-1.5 text-xs font-semibold bg-orange-700 hover:bg-orange-600 text-white px-2.5 py-1.5 rounded-md transition-colors cursor-pointer"
+                      className="min-h-[44px] text-xs tabular-nums"
                     >
                       <ClipboardList className="w-3.5 h-3.5" />
-                      <span>
-                        Draft: {staffDraftDesigns} · {staffDraftSets}{' '}
-                        {staffDraftSets === 1 ? 'set' : 'sets'}
-                      </span>
-                    </button>
+                      <span>Draft: {staffDraftDesigns} · {staffDraftSets} sets</span>
+                    </Button>
                   )}
                 </div>
 
                 {staffLoading ? (
-                  <p className="text-xs text-stone-400 py-2">Loading live inventory...</p>
+                  <LoadingState message="Loading live stock..." className="py-4" />
                 ) : staffError ? (
-                  <p className="text-xs text-red-300 bg-red-950/60 border border-red-800/60 rounded-lg p-3">
+                  <p className="text-xs text-[#B42318] border border-[#B42318] rounded-[6px] p-3">
                     {staffError}
                   </p>
                 ) : (
                   <>
                     <div className="grid grid-cols-2 gap-3">
-                      <div className="bg-stone-800/90 border border-stone-700 rounded-lg p-3">
-                        <div className="flex items-center gap-1.5 text-xs text-stone-300 mb-1">
-                          <Warehouse className="w-3.5 h-3.5 text-sky-400" />
-                          <span>Godown Stock</span>
-                        </div>
-                        <p className="text-lg font-bold text-white tabular-nums">
-                          {godownSets}{' '}
-                          <span className="text-xs font-normal text-stone-300">sets</span>
+                      <div className="border border-[#E3E5EA] rounded-[6px] p-3">
+                        <span className="text-xs text-[#667085] block">Godown</span>
+                        <p className="text-lg font-semibold text-[#1A1D24] tabular-nums mt-0.5">
+                          {godownSets.toLocaleString('en-IN')} sets
                         </p>
-                        <p className="text-xs text-stone-400 tabular-nums">{godownPcs} pcs</p>
+                        <p className="text-xs text-[#667085] tabular-nums">
+                          {godownPcs.toLocaleString('en-IN')} pcs
+                        </p>
                       </div>
-
-                      <div className="bg-stone-800/90 border border-stone-700 rounded-lg p-3">
-                        <div className="flex items-center gap-1.5 text-xs text-stone-300 mb-1">
-                          <Store className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>Shop Floor</span>
-                        </div>
-                        <p className="text-lg font-bold text-white tabular-nums">
-                          {shopSets}{' '}
-                          <span className="text-xs font-normal text-stone-300">sets</span>
+                      <div className="border border-[#E3E5EA] rounded-[6px] p-3">
+                        <span className="text-xs text-[#667085] block">Shop Floor</span>
+                        <p className="text-lg font-semibold text-[#1A1D24] tabular-nums mt-0.5">
+                          {shopSets.toLocaleString('en-IN')} sets
                         </p>
-                        <p className="text-xs text-stone-400 tabular-nums">{shopPcs} pcs</p>
+                        <p className="text-xs text-[#667085] tabular-nums">
+                          {shopPcs.toLocaleString('en-IN')} pcs
+                        </p>
                       </div>
                     </div>
 
                     {staffProduct && (
-                      <div className="pt-1 space-y-3">
-                        <div className="flex items-center justify-between text-xs text-stone-300">
-                          <span>Add to Staff Draft Order</span>
+                      <div className="space-y-3 pt-1">
+                        <div className="flex items-center justify-between text-xs text-[#667085]">
+                          <span>Add to staff draft order</span>
                           {existingStaffDraftItem && (
-                            <span className="text-orange-400 font-semibold">
-                              In Draft: {existingStaffDraftItem.sets}{' '}
-                              {existingStaffDraftItem.sets === 1 ? 'set' : 'sets'}
+                            <span className="font-semibold text-[#1E2A4A] tabular-nums">
+                              In draft: {existingStaffDraftItem.sets} sets
                             </span>
                           )}
                         </div>
 
-                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                        <div className="flex flex-col sm:flex-row gap-2.5">
                           <QuantityStepper
                             value={staffSetsToAdd}
                             onChange={setStaffSetsToAdd}
                             min={1}
                             max={500}
-                            variant="dark"
+                            size="lg"
                             ariaLabel="Sets to add to staff draft order"
                             className="w-full sm:w-auto justify-between"
                           />
-
                           <Button
                             type="button"
                             onClick={handleAddToStaffDraftOrder}
-                            className="flex-1 h-10 bg-orange-700 hover:bg-orange-600 text-white font-semibold rounded-lg gap-1.5"
+                            className="flex-1 min-h-[44px]"
                           >
                             <ClipboardList className="w-4 h-4" />
                             <span>Add to Current Order</span>
@@ -645,23 +601,16 @@ export default function ProductPage() {
                           type="button"
                           variant="outline"
                           onClick={() => navigate(staffOrderPortalPath)}
-                          className="w-full h-9 border-stone-700 bg-stone-800 hover:bg-stone-700 text-stone-100 rounded-lg gap-1.5 text-xs"
+                          className="w-full min-h-[44px]"
                         >
                           <span>Open Staff Order Form</span>
-                          <ArrowRight className="w-3.5 h-3.5" />
+                          <ArrowRight className="w-4 h-4" />
                         </Button>
 
                         {staffAddedMsg && (
-                          <div className="flex items-center justify-between gap-2 bg-emerald-950/70 border border-emerald-700/60 text-emerald-200 px-3 py-2 rounded-lg text-xs">
-                            <span>{staffAddedMsg}</span>
-                            <button
-                              type="button"
-                              onClick={() => navigate(staffOrderPortalPath)}
-                              className="font-bold underline text-white shrink-0 cursor-pointer"
-                            >
-                              Open Draft
-                            </button>
-                          </div>
+                          <p className="text-xs font-medium text-[#1F7A4D] border border-[#1F7A4D] rounded-[6px] px-3 py-2">
+                            {staffAddedMsg}
+                          </p>
                         )}
                       </div>
                     )}
@@ -672,46 +621,44 @@ export default function ProductPage() {
           </div>
         </div>
 
-        {/* Customer Inquiry Card */}
-        <section className="bg-white rounded-xl border border-stone-200 shadow-2xs p-5 sm:p-6">
+        {/* Customer Inquiry Form */}
+        <section className="bg-white rounded-[6px] border border-[#E3E5EA] p-5">
           <div className="max-w-2xl space-y-4">
             <div>
-              <h3 className="text-base sm:text-lg font-bold text-stone-900">
-                Have a Question About Design {product.design_no}?
-              </h3>
-              <p className="text-xs sm:text-sm text-stone-500">
-                Send a direct inquiry for bulk pricing, custom dispatch, or fabric availability.
+              <h2 className="text-sm font-semibold text-[#1A1D24]">
+                Inquire About Design {product.design_no}
+              </h2>
+              <p className="text-xs text-[#667085] mt-0.5">
+                Send a message to {shopName} for bulk pricing or dispatch timelines.
               </p>
             </div>
 
             {submitted ? (
-              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center shrink-0">
-                    <Send className="w-5 h-5 text-emerald-700" />
-                  </div>
-                  <div>
-                    <p className="font-bold text-sm text-emerald-900">Inquiry Sent to Shop</p>
-                    <p className="text-xs text-emerald-800">
-                      Our sales team will contact you shortly regarding Design {product.design_no}.
-                    </p>
-                  </div>
-                </div>
-                <Button variant="outline" size="sm" onClick={() => setSubmitted(false)}>
-                  Send Another Inquiry
+              <div className="border border-[#1F7A4D] rounded-[6px] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <p className="text-sm font-medium text-[#1F7A4D]">
+                  Inquiry sent to {shopName} for Design {product.design_no}.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSubmitted(false)}
+                  className="min-h-[44px]"
+                >
+                  Send another
                 </Button>
               </div>
             ) : (
-              <form onSubmit={handleSubmitInquiry} className="space-y-3.5">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <form onSubmit={handleSubmitInquiry} className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <Label htmlFor="inquiry-name">Your Name / Firm Name *</Label>
+                    <Label htmlFor="inquiry-name">Name / Firm Name *</Label>
                     <Input
                       id="inquiry-name"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       placeholder="Enter your name"
                       required
+                      className="min-h-[44px]"
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -723,6 +670,7 @@ export default function ProductPage() {
                       onChange={(e) => setPhone(e.target.value)}
                       placeholder="+91 98765 43210"
                       required
+                      className="min-h-[44px]"
                     />
                   </div>
                 </div>
@@ -732,18 +680,18 @@ export default function ProductPage() {
                     id="inquiry-message"
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
-                    placeholder="Specific quantity, station, or dispatch inquiry..."
+                    placeholder="Quantity, station, or dispatch notes..."
+                    className="min-h-[44px]"
                   />
                 </div>
                 <div>
                   <Button
                     type="submit"
                     variant="outline"
-                    className="w-full sm:w-auto border-stone-300 text-stone-800 hover:bg-stone-100"
+                    className="w-full sm:w-auto min-h-[44px]"
                     disabled={submitting || !name.trim() || !phone.trim()}
                   >
-                    <Send className="w-4 h-4 mr-1.5 text-orange-700" />
-                    {submitting ? 'Sending Inquiry...' : 'Send Inquiry'}
+                    {submitting ? 'Sending...' : 'Send Inquiry'}
                   </Button>
                 </div>
               </form>
@@ -752,34 +700,27 @@ export default function ProductPage() {
         </section>
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-stone-200 bg-white text-center py-4 px-4 text-xs text-stone-500">
-        © {new Date().getFullYear()} {resolveBrandName(product.business_name)} • Textile Wholesale Management System
+      {/* Small Powered by Kala Footer */}
+      <footer className="border-t border-[#E3E5EA] bg-white text-center py-3 px-4 text-xs text-[#667085]">
+        Powered by Kala
       </footer>
 
-      {/* Mobile-Safe Floating Bottom Order Bar */}
+      {/* Mobile-Safe Sticky Bottom Order Bar */}
       {cartSummary.totalDesigns > 0 && (
-        <div className="fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur-xs border-t border-stone-200 shadow-lg px-4 pt-3 pb-safe">
-          <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-lg bg-orange-50 border border-orange-200 text-orange-700 flex items-center justify-center shrink-0">
-                <ShoppingBag className="w-5 h-5" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm sm:text-base font-bold text-stone-900 truncate tabular-nums">
-                  {cartSummary.totalDesigns}{' '}
-                  {cartSummary.totalDesigns === 1 ? 'design' : 'designs'} ·{' '}
-                  {cartSummary.totalSets} {cartSummary.totalSets === 1 ? 'set' : 'sets'}
-                </p>
-                <p className="text-xs text-stone-500 truncate">
-                  Saved in your wholesale order list
-                </p>
-              </div>
+        <div className="fixed bottom-0 inset-x-0 z-30 bg-white border-t border-[#E3E5EA] px-4 pt-3 pb-safe">
+          <div className="max-w-5xl mx-auto flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-[#1A1D24] truncate tabular-nums">
+                {cartSummary.totalDesigns}{' '}
+                {cartSummary.totalDesigns === 1 ? 'design' : 'designs'} ·{' '}
+                {cartSummary.totalSets} {cartSummary.totalSets === 1 ? 'set' : 'sets'}
+              </p>
+              <p className="text-xs text-[#667085] truncate">In your order list</p>
             </div>
 
             <Link
               to={`/${normalizedSlug}/order-request`}
-              className="inline-flex items-center gap-1.5 font-bold text-xs sm:text-sm bg-orange-700 hover:bg-orange-800 text-white px-4 py-2.5 rounded-lg shadow-xs transition-colors shrink-0"
+              className="min-h-[44px] inline-flex items-center gap-1.5 font-semibold text-sm bg-[#1E2A4A] hover:bg-[#16203A] text-white px-4 rounded-[6px] shrink-0"
             >
               <span>Review Order</span>
               <ArrowRight className="w-4 h-4" />

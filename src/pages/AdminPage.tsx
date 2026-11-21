@@ -1,7 +1,5 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Button } from '@/components/ui/button'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SettingsDialog } from '@/components/admin/SettingsDialog'
 import { useAdminAuth } from '@/hooks/useAdminAuth'
 import { useAuth } from '@/contexts/AuthContext'
@@ -11,6 +9,7 @@ import DashboardTab from '@/components/admin/DashboardTab'
 import ProductTab from '@/components/admin/ProductTab'
 import StockTab from '@/components/admin/StockTab'
 import OrderTab from '@/components/admin/OrderTab'
+import OrderRequestsSection from '@/components/admin/OrderRequestsSection'
 import ShopScanTab from '@/components/admin/ShopScanTab'
 import PartyTab from '@/components/admin/PartyTab'
 import AgentTab from '@/components/admin/AgentTab'
@@ -23,46 +22,69 @@ import {
   Package,
   Warehouse,
   ShoppingCart,
+  Inbox,
   ScanLine,
   Users,
   UserCheck,
-  FileText,
-  MessageSquare,
-  ShieldCheck,
+  Menu,
+  X,
+  ChevronUp,
 } from 'lucide-react'
 
-const TAB_CONFIG = [
+const SIDEBAR_ITEMS = [
   { value: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { value: 'products', label: 'Products', icon: Package },
-  { value: 'stock', label: 'Stock & Godown', icon: Warehouse },
+  { value: 'stock', label: 'Stock', icon: Warehouse },
   { value: 'orders', label: 'Orders', icon: ShoppingCart },
-  { value: 'shopscan', label: 'Shop Terminal', icon: ScanLine },
+  { value: 'requests', label: 'Requests', icon: Inbox },
   { value: 'parties', label: 'Parties', icon: Users },
   { value: 'agents', label: 'Agents', icon: UserCheck },
-  { value: 'invoices', label: 'Invoices', icon: FileText },
-  { value: 'inquiries', label: 'Inquiries', icon: MessageSquare },
-]
+  { value: 'shopscan', label: 'Scan', icon: ScanLine },
+] as const
+
+const VALID_TABS = new Set([
+  'dashboard',
+  'products',
+  'stock',
+  'orders',
+  'requests',
+  'parties',
+  'agents',
+  'shopscan',
+  'invoices',
+  'inquiries',
+])
 
 export default function AdminPage() {
   const { logout } = useAdminAuth()
-  const { business } = useAuth()
+  const { user, business, memberships, activeFY, switchBusiness } = useAuth()
   const [showSettings, setShowSettings] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [activeTab, setActiveTab] = useState('dashboard')
   const [pendingRequestCount, setPendingRequestCount] = useState(0)
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
 
-  const activeTabInfo = TAB_CONFIG.find((t) => t.value === activeTab) || TAB_CONFIG[0]
+  const shopName = resolveBrandName(business?.name)
+  const shopLogoUrl =
+    typeof business?.settings?.logo_url === 'string' ? business.settings.logo_url : null
+
+  const activeNavItem =
+    SIDEBAR_ITEMS.find((t) => t.value === activeTab) || {
+      value: activeTab,
+      label: activeTab.charAt(0).toUpperCase() + activeTab.slice(1),
+    }
 
   // Handle tab from URL params
   useEffect(() => {
     const tab = searchParams.get('tab')
-    if (tab && TAB_CONFIG.some((t) => t.value === tab)) {
+    if (tab && VALID_TABS.has(tab)) {
       setActiveTab(tab)
     }
   }, [searchParams])
 
-  // Load pending buyer order request count for Orders tab badge
+  // Load pending buyer order request count for Requests badge
   useEffect(() => {
     let active = true
     fetchOrderRequests('requested')
@@ -78,6 +100,7 @@ export default function AdminPage() {
   const handleTabChange = (val: string) => {
     setActiveTab(val)
     setSearchParams({ tab: val })
+    setMobileMenuOpen(false)
   }
 
   const handleOpenDraftFromScanner = () => {
@@ -90,121 +113,221 @@ export default function AdminPage() {
     navigate('/login')
   }
 
-  return (
-    <div className="min-h-screen bg-[#f8f7f4] text-stone-900">
-      {/* Operational Header */}
-      <header className="sticky top-0 z-40 bg-white border-b border-stone-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 sm:h-16 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <KalaLogo iconOnly size="md" />
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h1 className="text-base sm:text-lg font-extrabold text-stone-900 tracking-tight truncate">
-                  {resolveBrandName(business?.name)}
-                </h1>
-                <span className="hidden sm:inline-flex items-center gap-1 text-xs font-semibold text-stone-700 bg-stone-100 px-2.5 py-0.5 rounded-md border border-stone-200">
-                  <ShieldCheck className="w-3.5 h-3.5 text-orange-700" />
-                  <span>Owner Workspace</span>
-                </span>
-              </div>
-              <p className="text-xs text-stone-500 truncate">
-                {activeTabInfo.label} • Textile Wholesale Management
-              </p>
-            </div>
-          </div>
+  const renderSidebarContent = () => (
+    <div className="flex flex-col h-full bg-white">
+      {/* Shop Name & Brand */}
+      <div className="h-14 px-4 border-b border-[#E3E5EA] flex items-center justify-between gap-2 shrink-0">
+        <KalaLogo
+          size="sm"
+          titleOverride={shopName}
+          logoUrl={shopLogoUrl}
+          showSubtitle={false}
+        />
+        <button
+          type="button"
+          onClick={() => setMobileMenuOpen(false)}
+          aria-label="Close navigation"
+          className="lg:hidden min-w-[44px] min-h-[44px] flex items-center justify-center rounded-[6px] text-[#667085] hover:bg-[#F4F5F7] hover:text-[#1A1D24]"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowSettings(true)}
-              className="gap-1.5"
+      {/* Navigation Links */}
+      <nav aria-label="Admin navigation" className="flex-1 overflow-y-auto p-3 space-y-0.5">
+        {SIDEBAR_ITEMS.map((item) => {
+          const isActive = activeTab === item.value
+          const Icon = item.icon
+          return (
+            <button
+              key={item.value}
+              type="button"
+              onClick={() => handleTabChange(item.value)}
+              aria-current={isActive ? 'page' : undefined}
+              className={`w-full flex items-center justify-between gap-2.5 px-3 py-2 rounded-[6px] text-sm font-medium transition-colors cursor-pointer ${
+                isActive
+                  ? 'bg-[#1E2A4A] text-white'
+                  : 'text-[#1A1D24] hover:bg-[#F4F5F7]'
+              }`}
             >
-              <Settings className="w-3.5 h-3.5 text-stone-600" />
-              <span>Settings</span>
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
+              <span className="flex items-center gap-2.5 min-w-0">
+                <Icon className="w-4 h-4 shrink-0" />
+                <span className="truncate">{item.label}</span>
+              </span>
+              {item.value === 'requests' && pendingRequestCount > 0 && (
+                <span
+                  className={`inline-flex items-center justify-center min-w-5 h-5 px-1.5 text-xs font-semibold rounded-[6px] tabular-nums ${
+                    isActive
+                      ? 'bg-white text-[#1E2A4A]'
+                      : 'border border-[#E3E5EA] bg-[#F4F5F7] text-[#1E2A4A]'
+                  }`}
+                >
+                  {pendingRequestCount}
+                </span>
+              )}
+            </button>
+          )
+        })}
+
+        <div className="pt-2 mt-2 border-t border-[#E3E5EA]">
+          <button
+            type="button"
+            onClick={() => {
+              setMobileMenuOpen(false)
+              setShowSettings(true)
+            }}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-[6px] text-sm font-medium text-[#1A1D24] hover:bg-[#F4F5F7] transition-colors cursor-pointer"
+          >
+            <Settings className="w-4 h-4 shrink-0 text-[#667085]" />
+            <span>Settings</span>
+          </button>
+        </div>
+      </nav>
+
+      {/* User Menu */}
+      <div className="p-3 border-t border-[#E3E5EA] relative shrink-0">
+        {userMenuOpen && (
+          <div className="mb-2 rounded-[6px] border border-[#E3E5EA] bg-white p-1 space-y-0.5">
+            <button
+              type="button"
+              onClick={() => {
+                setUserMenuOpen(false)
+                setShowSettings(true)
+              }}
+              className="w-full flex items-center gap-2 px-2.5 py-2 rounded-[6px] text-xs font-medium text-[#1A1D24] hover:bg-[#F4F5F7] cursor-pointer"
+            >
+              <Settings className="w-3.5 h-3.5 text-[#667085]" />
+              <span>Business &amp; Team Settings</span>
+            </button>
+            <button
+              type="button"
               onClick={handleLogout}
-              className="text-stone-600 hover:text-red-700 hover:bg-red-50 gap-1.5"
+              className="w-full flex items-center gap-2 px-2.5 py-2 rounded-[6px] text-xs font-medium text-[#B42318] hover:bg-[#F4F5F7] cursor-pointer"
             >
               <LogOut className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Logout</span>
-            </Button>
+              <span>Sign Out</span>
+            </button>
           </div>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setUserMenuOpen((prev) => !prev)}
+          aria-expanded={userMenuOpen}
+          className="w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-[6px] border border-[#E3E5EA] bg-white hover:bg-[#F4F5F7] text-left transition-colors cursor-pointer"
+        >
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-[#1A1D24] truncate">
+              {user?.email || 'Owner Account'}
+            </p>
+            <p className="text-[11px] text-[#667085]">Owner</p>
+          </div>
+          <ChevronUp
+            className={`w-4 h-4 text-[#667085] shrink-0 transition-transform ${
+              userMenuOpen ? 'rotate-180' : ''
+            }`}
+          />
+        </button>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="min-h-screen bg-[#F4F5F7] text-[#1A1D24]">
+      {/* Fixed Left Sidebar (Desktop) */}
+      <aside className="hidden lg:block fixed inset-y-0 left-0 w-60 border-r border-[#E3E5EA] bg-white z-30">
+        {renderSidebarContent()}
+      </aside>
+
+      {/* Mobile Drawer Sidebar */}
+      {mobileMenuOpen && (
+        <div className="lg:hidden fixed inset-0 z-50 flex">
+          <div
+            className="fixed inset-0 bg-[#1A1D24]/50"
+            onClick={() => setMobileMenuOpen(false)}
+            aria-hidden="true"
+          />
+          <aside className="relative w-64 max-w-[82vw] h-full border-r border-[#E3E5EA] bg-white z-10">
+            {renderSidebarContent()}
+          </aside>
         </div>
-      </header>
+      )}
 
-      {/* Main Workspace */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-6">
-        <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full space-y-6">
-          {/* Navigation Bar */}
-          <nav
-            aria-label="Admin sections"
-            className="bg-white p-1.5 rounded-xl border border-stone-200 shadow-2xs overflow-x-auto"
-          >
-            <TabsList className="w-full flex justify-start gap-1 bg-transparent p-0 h-auto">
-              {TAB_CONFIG.map((tab) => (
-                <TabsTrigger
-                  key={tab.value}
-                  value={tab.value}
-                  className="flex items-center gap-2 px-3.5 py-2 text-xs sm:text-sm font-semibold whitespace-nowrap rounded-lg data-[state=active]:bg-stone-900 data-[state=active]:text-white data-[state=active]:shadow-2xs text-stone-600 hover:text-stone-900 hover:bg-stone-100/70 transition-colors cursor-pointer"
-                >
-                  <tab.icon className="w-4 h-4 shrink-0" />
-                  <span>{tab.label}</span>
-                  {tab.value === 'orders' && pendingRequestCount > 0 && (
-                    <span
-                      title={`${pendingRequestCount} pending buyer order requests`}
-                      className="ml-0.5 inline-flex items-center justify-center min-w-5 h-5 px-1.5 text-xs font-bold bg-orange-700 text-white rounded-full tabular-nums"
-                    >
-                      {pendingRequestCount}
-                    </span>
-                  )}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </nav>
+      {/* Main Content Shell */}
+      <div className="lg:pl-60 min-h-screen flex flex-col">
+        {/* Top Bar */}
+        <header className="sticky top-0 z-20 h-14 bg-white border-b border-[#E3E5EA] px-4 sm:px-6 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(true)}
+              aria-label="Open navigation menu"
+              className="lg:hidden min-w-[44px] min-h-[44px] -ml-2 flex items-center justify-center rounded-[6px] text-[#1A1D24] hover:bg-[#F4F5F7]"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <h1 className="text-base font-semibold text-[#1A1D24] tracking-tight truncate">
+              {activeNavItem.label}
+            </h1>
+          </div>
 
-          <TabsContent value="dashboard" className="mt-0 focus:outline-none">
+          <div className="flex items-center gap-2.5 shrink-0">
+            {activeFY && (
+              <span className="hidden sm:inline-flex items-center px-2 py-1 text-xs font-medium text-[#1A1D24] bg-[#F4F5F7] border border-[#E3E5EA] rounded-[6px] tabular-nums">
+                {activeFY.label}
+              </span>
+            )}
+            {memberships.length > 1 && business ? (
+              <select
+                aria-label="Switch active company"
+                value={business.id}
+                onChange={(e) => {
+                  const nextId = Number(e.target.value)
+                  if (nextId && nextId !== business.id) {
+                    void switchBusiness(nextId)
+                  }
+                }}
+                className="h-8 bg-white border border-[#E3E5EA] rounded-[6px] px-2.5 text-xs font-medium text-[#1A1D24]"
+              >
+                {memberships.map((m) => (
+                  <option key={m.business_id} value={m.business_id}>
+                    {resolveBrandName(m.business?.name)}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="text-xs text-[#667085] hidden sm:inline truncate">
+                {shopName}
+              </span>
+            )}
+          </div>
+        </header>
+
+        {/* Canvas Workspace */}
+        <main className="flex-1 p-4 sm:p-6">
+          <div key={business?.id ?? 'none'} className="max-w-[1200px] mx-auto">
             {activeTab === 'dashboard' && <DashboardTab onNavigateTab={handleTabChange} />}
-          </TabsContent>
-
-          <TabsContent value="products" className="mt-0 focus:outline-none">
             {activeTab === 'products' && <ProductTab />}
-          </TabsContent>
-
-          <TabsContent value="stock" className="mt-0 focus:outline-none">
             {activeTab === 'stock' && <StockTab />}
-          </TabsContent>
-
-          <TabsContent value="orders" className="mt-0 focus:outline-none">
-            {activeTab === 'orders' && <OrderTab />}
-          </TabsContent>
-
-          <TabsContent value="shopscan" className="mt-0 focus:outline-none">
+            {activeTab === 'orders' && <OrderTab hideRequestsSection />}
+            {activeTab === 'requests' && (
+              <OrderRequestsSection
+                onOrderConverted={() => {
+                  handleTabChange('orders')
+                }}
+                onPendingCountChange={setPendingRequestCount}
+              />
+            )}
             {activeTab === 'shopscan' && (
               <ShopScanTab onOpenDraftOrder={handleOpenDraftFromScanner} />
             )}
-          </TabsContent>
-
-          <TabsContent value="parties" className="mt-0 focus:outline-none">
             {activeTab === 'parties' && <PartyTab />}
-          </TabsContent>
-
-          <TabsContent value="agents" className="mt-0 focus:outline-none">
             {activeTab === 'agents' && <AgentTab />}
-          </TabsContent>
-
-          <TabsContent value="invoices" className="mt-0 focus:outline-none">
             {activeTab === 'invoices' && <InvoiceTab />}
-          </TabsContent>
-
-          <TabsContent value="inquiries" className="mt-0 focus:outline-none">
             {activeTab === 'inquiries' && <InquiryTab />}
-          </TabsContent>
-        </Tabs>
-      </main>
+          </div>
+        </main>
+      </div>
 
       <SettingsDialog open={showSettings} onOpenChange={setShowSettings} />
     </div>

@@ -4,31 +4,66 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Typography & Base Surface */
-body {
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  color: #1c1917;
-  background-color: #f8f7f4;
+:root {
+  /* Core Phase 2 Design Tokens */
+  --radius: 6px;
+  --primary: #1E2A4A;
+  --primary-hover: #16203A;
+  --primary-foreground: #FFFFFF;
+  --canvas: #F4F5F7;
+  --surface: #FFFFFF;
+  --border: #E3E5EA;
+  --text: #1A1D24;
+  --muted-text: #667085;
+  --success: #1F7A4D;
+  --warning: #B7791F;
+  --warning-text: #8A580F;
+  --danger: #B42318;
+
+  /* Semantic aliases for UI primitives */
+  --background: var(--canvas);
+  --foreground: var(--text);
+  --card: var(--surface);
+  --card-foreground: var(--text);
+  --popover: var(--surface);
+  --popover-foreground: var(--text);
+  --secondary: #F4F5F7;
+  --secondary-foreground: var(--text);
+  --muted: #F4F5F7;
+  --muted-foreground: var(--muted-text);
+  --accent: #F4F5F7;
+  --accent-foreground: var(--primary);
+  --destructive: var(--danger);
+  --destructive-foreground: #FFFFFF;
+  --input: var(--border);
+  --ring: var(--primary);
 }
 
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --radius-2xl: calc(var(--radius) + 8px);
-  --radius-3xl: calc(var(--radius) + 12px);
-  --radius-4xl: calc(var(--radius) + 16px);
+  --font-sans: "IBM Plex Sans", "Noto Sans Gujarati", "Noto Sans Devanagari", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 6px;
+  --radius-xl: 6px;
+  --radius-2xl: 6px;
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-muted-text: var(--muted-text);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -36,63 +71,31 @@ body {
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
-  --color-border: var(--border);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-input: var(--input);
   --color-ring: var(--ring);
 }
 
-:root {
-  --radius: 0.5rem;
-  --background: #f8f7f4;
-  --foreground: #1c1917;
-  --card: #ffffff;
-  --card-foreground: #1c1917;
-  --popover: #ffffff;
-  --popover-foreground: #1c1917;
-  --primary: #c2410c;
-  --primary-foreground: #ffffff;
-  --secondary: #f3f1ec;
-  --secondary-foreground: #292524;
-  --muted: #f3f1ec;
-  --muted-foreground: #57534e;
-  --accent: #fff7ed;
-  --accent-foreground: #9a3412;
-  --destructive: #dc2626;
-  --destructive-foreground: #ffffff;
-  --border: #e7e5e4;
-  --input: #d6d3d1;
-  --ring: #c2410c;
-}
-
-.dark {
-  --background: #0c0a09;
-  --foreground: #fafaf9;
-  --card: #1c1917;
-  --card-foreground: #fafaf9;
-  --popover: #1c1917;
-  --popover-foreground: #fafaf9;
-  --primary: #ea580c;
-  --primary-foreground: #ffffff;
-  --secondary: #292524;
-  --secondary-foreground: #fafaf9;
-  --muted: #292524;
-  --muted-foreground: #a8a29e;
-  --accent: #292524;
-  --accent-foreground: #fafaf9;
-  --destructive: #ef4444;
-  --destructive-foreground: #ffffff;
-  --border: #292524;
-  --input: #44403c;
-  --ring: #ea580c;
-}
-
 @layer base {
   * {
-    @apply border-border;
+    border-color: var(--border);
   }
 
   body {
-    @apply bg-background text-foreground;
+    font-family: "IBM Plex Sans", "Noto Sans Gujarati", "Noto Sans Devanagari", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    color: var(--text);
+    background-color: var(--canvas);
+  }
+
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
   }
 }
 
@@ -167,11 +170,11 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #d6d3d1;
+  background: #CFD4DC;
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #a8a29e;
+  background: #98A2B3;
 }
 
 /* ============================================
@@ -188,7 +191,7 @@ body {
 #order-qr-reader video,
 #shop-qr-reader video,
 #shop-floor-scanner-view video {
-  border-radius: 0.5rem;
+  border-radius: 6px;
 }
 
 #qr-reader__scan_region,
@@ -198,7 +201,6 @@ body {
   min-height: 200px;
 }
 
-/* Hide html5-qrcode built-in UI elements */
 #qr-reader__dashboard,
 #order-qr-reader__dashboard,
 #shop-qr-reader__dashboard,

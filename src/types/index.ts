@@ -14,8 +14,32 @@ export interface Membership {
   user_id: string
   business_id: number
   role: UserRole
+  role_id?: number | null
   created_at: string
   business?: Business
+}
+
+export interface Branch {
+  id: number
+  business_id: number
+  code: string
+  name: string
+  gstin?: string | null
+  state_code?: string | null
+  address?: string | null
+  is_default: boolean
+  is_active: boolean
+  row_version?: number
+}
+
+export interface FinancialYear {
+  id: number
+  business_id: number
+  label: string
+  start_date: string
+  end_date: string
+  is_active: boolean
+  is_locked: boolean
 }
 
 // Product types

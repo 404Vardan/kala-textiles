@@ -1,20 +1,9 @@
 import React from 'react'
 import { cn } from '@/lib/utils'
-import {
-  CheckCircle2,
-  Clock,
-  XCircle,
-  AlertCircle,
-  Inbox,
-  ArrowDownLeft,
-  ArrowRightLeft,
-  ArrowUpRight,
-  Minus,
-  Plus,
-} from 'lucide-react'
+import { Minus, Plus } from 'lucide-react'
 
 /* ============================================================================
-   1. StatusBadge — Accessible status indicator (icon + text + distinct border)
+   1. StatusBadge — Flat, high-contrast status indicator (1px border, no tints)
    ============================================================================ */
 
 export type BadgeVariant =
@@ -45,117 +34,112 @@ interface StatusBadgeProps {
 export function StatusBadge({ status, label, className, size = 'sm' }: StatusBadgeProps) {
   const norm = (status || '').trim()
 
-  const config: Record<
-    string,
-    { text: string; classes: string; icon: React.ComponentType<{ className?: string }> }
-  > = {
+  const config: Record<string, { text: string; dotClass: string; textClass: string }> = {
     draft: {
       text: 'Draft',
-      classes: 'bg-amber-50 text-amber-800 border-amber-300/80',
-      icon: Clock,
+      dotClass: 'bg-[#B7791F]',
+      textClass: 'text-[#8A580F]',
     },
     confirmed: {
       text: 'Confirmed',
-      classes: 'bg-emerald-50 text-emerald-800 border-emerald-300/80',
-      icon: CheckCircle2,
+      dotClass: 'bg-[#1F7A4D]',
+      textClass: 'text-[#1F7A4D]',
     },
     cancelled: {
       text: 'Cancelled',
-      classes: 'bg-red-50 text-red-800 border-red-200',
-      icon: XCircle,
+      dotClass: 'bg-[#B42318]',
+      textClass: 'text-[#B42318]',
     },
     requested: {
       text: 'Requested',
-      classes: 'bg-orange-50 text-orange-800 border-orange-300/80',
-      icon: Inbox,
+      dotClass: 'bg-[#1E2A4A]',
+      textClass: 'text-[#1E2A4A]',
     },
     converted: {
       text: 'Converted',
-      classes: 'bg-emerald-50 text-emerald-800 border-emerald-300/80',
-      icon: CheckCircle2,
+      dotClass: 'bg-[#1F7A4D]',
+      textClass: 'text-[#1F7A4D]',
     },
     rejected: {
       text: 'Rejected',
-      classes: 'bg-red-50 text-red-800 border-red-200',
-      icon: XCircle,
+      dotClass: 'bg-[#B42318]',
+      textClass: 'text-[#B42318]',
     },
     active: {
       text: 'Active',
-      classes: 'bg-emerald-50 text-emerald-800 border-emerald-300/80',
-      icon: CheckCircle2,
+      dotClass: 'bg-[#1F7A4D]',
+      textClass: 'text-[#1F7A4D]',
     },
     archived: {
       text: 'Archived',
-      classes: 'bg-stone-100 text-stone-600 border-stone-300',
-      icon: XCircle,
+      dotClass: 'bg-[#667085]',
+      textClass: 'text-[#667085]',
     },
     inactive: {
       text: 'Inactive',
-      classes: 'bg-stone-100 text-stone-600 border-stone-300',
-      icon: XCircle,
+      dotClass: 'bg-[#667085]',
+      textClass: 'text-[#667085]',
     },
     INTAKE: {
-      text: 'Inward Intake',
-      classes: 'bg-emerald-50 text-emerald-800 border-emerald-300/80',
-      icon: ArrowDownLeft,
+      text: 'Intake',
+      dotClass: 'bg-[#1F7A4D]',
+      textClass: 'text-[#1F7A4D]',
     },
     TRANSFER: {
-      text: 'Location Transfer',
-      classes: 'bg-sky-50 text-sky-800 border-sky-300/80',
-      icon: ArrowRightLeft,
+      text: 'Transfer',
+      dotClass: 'bg-[#1E2A4A]',
+      textClass: 'text-[#1E2A4A]',
     },
     DISPATCH: {
-      text: 'Order Dispatch',
-      classes: 'bg-orange-50 text-orange-800 border-orange-300/80',
-      icon: ArrowUpRight,
+      text: 'Dispatch',
+      dotClass: 'bg-[#B7791F]',
+      textClass: 'text-[#8A580F]',
     },
     ADJUSTMENT: {
       text: 'Adjustment',
-      classes: 'bg-stone-100 text-stone-700 border-stone-300',
-      icon: AlertCircle,
+      dotClass: 'bg-[#667085]',
+      textClass: 'text-[#667085]',
     },
     pending: {
       text: 'Pending',
-      classes: 'bg-amber-50 text-amber-800 border-amber-300/80',
-      icon: Clock,
+      dotClass: 'bg-[#B7791F]',
+      textClass: 'text-[#8A580F]',
     },
     quoted: {
       text: 'Quoted',
-      classes: 'bg-sky-50 text-sky-800 border-sky-300/80',
-      icon: CheckCircle2,
+      dotClass: 'bg-[#1E2A4A]',
+      textClass: 'text-[#1E2A4A]',
     },
     completed: {
       text: 'Completed',
-      classes: 'bg-emerald-50 text-emerald-800 border-emerald-300/80',
-      icon: CheckCircle2,
+      dotClass: 'bg-[#1F7A4D]',
+      textClass: 'text-[#1F7A4D]',
     },
   }
 
   const matched = config[norm] || {
     text: label || norm || 'Unknown',
-    classes: 'bg-stone-100 text-stone-700 border-stone-300',
-    icon: Clock,
+    dotClass: 'bg-[#667085]',
+    textClass: 'text-[#667085]',
   }
-
-  const Icon = matched.icon
 
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 font-semibold rounded-md border whitespace-nowrap',
-        size === 'sm' ? 'px-2.5 py-0.5 text-xs' : 'px-3 py-1 text-xs sm:text-sm',
-        matched.classes,
+        'inline-flex items-center gap-1.5 font-medium rounded-[6px] border border-[#E3E5EA] bg-white whitespace-nowrap',
+        size === 'sm' ? 'px-2 py-0.5 text-xs' : 'px-2.5 py-1 text-xs',
+        matched.textClass,
         className
       )}
     >
-      <Icon className="w-3.5 h-3.5 shrink-0" />
+      <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', matched.dotClass)} aria-hidden="true" />
       <span>{label || matched.text}</span>
     </span>
   )
 }
 
 /* ============================================================================
-   2. QuantityStepper — Touch-safe 1..500 set quantity selector
+   2. QuantityStepper — Touch-safe 1..500 set quantity selector (44px in lg)
    ============================================================================ */
 
 interface QuantityStepperProps {
@@ -177,7 +161,6 @@ export function QuantityStepper({
   max = 500,
   disabled = false,
   size = 'md',
-  variant = 'light',
   ariaLabel = 'Quantity in sets',
   className,
 }: QuantityStepperProps) {
@@ -196,25 +179,14 @@ export function QuantityStepper({
   }
 
   const btnDimensions =
-    size === 'sm' ? 'w-8 h-8' : size === 'lg' ? 'w-11 h-11' : 'w-9 h-9'
+    size === 'sm' ? 'w-8 h-8' : size === 'lg' ? 'w-11 h-11 min-w-[44px] min-h-[44px]' : 'w-9 h-9'
   const inputDimensions =
-    size === 'sm' ? 'w-11 text-sm' : size === 'lg' ? 'w-16 text-base' : 'w-13 text-sm'
-
-  const containerClasses =
-    variant === 'dark'
-      ? 'border-stone-700 bg-stone-800 text-white'
-      : 'border-stone-300 bg-stone-50 text-stone-900'
-
-  const buttonClasses =
-    variant === 'dark'
-      ? 'text-stone-200 hover:bg-stone-700 hover:text-white focus-visible:ring-orange-500'
-      : 'text-stone-700 hover:bg-white hover:text-stone-950 hover:shadow-2xs focus-visible:ring-orange-700'
+    size === 'sm' ? 'w-11 text-sm' : size === 'lg' ? 'w-14 h-11 text-base' : 'w-12 text-sm'
 
   return (
     <div
       className={cn(
-        'inline-flex items-center justify-between border rounded-lg p-1 select-none',
-        containerClasses,
+        'inline-flex items-center justify-between border border-[#E3E5EA] bg-white text-[#1A1D24] rounded-[6px] select-none',
         className
       )}
     >
@@ -224,9 +196,8 @@ export function QuantityStepper({
         disabled={disabled || value <= min}
         aria-label="Decrease set quantity"
         className={cn(
-          'rounded-md flex items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2 disabled:opacity-40 disabled:pointer-events-none cursor-pointer',
-          btnDimensions,
-          buttonClasses
+          'rounded-l-[6px] flex items-center justify-center text-[#1A1D24] hover:bg-[#F4F5F7] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E2A4A] disabled:opacity-40 disabled:pointer-events-none cursor-pointer border-r border-[#E3E5EA]',
+          btnDimensions
         )}
       >
         <Minus className="w-4 h-4" />
@@ -241,7 +212,7 @@ export function QuantityStepper({
         onChange={handleInputChange}
         disabled={disabled}
         className={cn(
-          'text-center font-bold bg-transparent focus:outline-none tabular-nums',
+          'text-center font-semibold bg-transparent focus:outline-none tabular-nums text-[#1A1D24]',
           inputDimensions
         )}
       />
@@ -252,9 +223,8 @@ export function QuantityStepper({
         disabled={disabled || value >= max}
         aria-label="Increase set quantity"
         className={cn(
-          'rounded-md flex items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2 disabled:opacity-40 disabled:pointer-events-none cursor-pointer',
-          btnDimensions,
-          buttonClasses
+          'rounded-r-[6px] flex items-center justify-center text-[#1A1D24] hover:bg-[#F4F5F7] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E2A4A] disabled:opacity-40 disabled:pointer-events-none cursor-pointer border-l border-[#E3E5EA]',
+          btnDimensions
         )}
       >
         <Plus className="w-4 h-4" />
@@ -264,7 +234,7 @@ export function QuantityStepper({
 }
 
 /* ============================================================================
-   3. SummaryCard — Operational metric card
+   3. SummaryCard — Compact stat block (white surface, 1px border, no shadows)
    ============================================================================ */
 
 interface SummaryCardProps {
@@ -285,58 +255,29 @@ export function SummaryCard({
   unit,
   subtitle,
   subtext,
-  icon: Icon,
-  iconClassName,
-  accent = 'stone',
   className,
 }: SummaryCardProps) {
-  const defaultIconClasses: Record<string, string> = {
-    stone: 'bg-stone-100 text-stone-700',
-    orange: 'bg-orange-50 text-orange-700',
-    emerald: 'bg-emerald-50 text-emerald-700',
-    amber: 'bg-amber-50 text-amber-700',
-  }
-
-  const resolvedIconClasses = iconClassName || defaultIconClasses[accent] || defaultIconClasses.stone
   const resolvedSubtitle = subtitle ?? subtext
-
-  const renderIcon = () => {
-    if (!Icon) return null
-    if (React.isValidElement(Icon)) return Icon
-    if (typeof Icon === 'function' || (typeof Icon === 'object' && Icon !== null)) {
-      const IconComp = Icon as React.ComponentType<{ className?: string }>
-      return <IconComp className="w-4 h-4" />
-    }
-    return null
-  }
 
   return (
     <div
       className={cn(
-        'bg-white border border-stone-200/90 rounded-xl p-4 sm:p-5 shadow-2xs flex flex-col justify-between gap-2',
+        'bg-white border border-[#E3E5EA] rounded-[6px] p-4 flex flex-col justify-between gap-1.5',
         className
       )}
     >
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold uppercase tracking-wider text-stone-500">
-          {label}
+      <span className="text-xs font-medium text-[#667085]">{label}</span>
+
+      <div className="flex items-baseline gap-1.5">
+        <span className="text-2xl font-semibold tracking-tight text-[#1A1D24] tabular-nums">
+          {value}
         </span>
-        {Icon && (
-          <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center shrink-0', resolvedIconClasses)}>
-            {renderIcon()}
-          </div>
-        )}
+        {unit && <span className="text-xs font-medium text-[#667085]">{unit}</span>}
       </div>
 
-      <div>
-        <div className="flex items-baseline gap-1.5">
-          <span className="text-2xl sm:text-3xl font-bold tracking-tight text-stone-900 tabular-nums">
-            {value}
-          </span>
-          {unit && <span className="text-xs sm:text-sm font-medium text-stone-500">{unit}</span>}
-        </div>
-        {resolvedSubtitle && <div className="text-xs text-stone-600 mt-1 font-medium">{resolvedSubtitle}</div>}
-      </div>
+      {resolvedSubtitle && (
+        <div className="text-xs text-[#667085] tabular-nums">{resolvedSubtitle}</div>
+      )}
     </div>
   )
 }
@@ -369,10 +310,10 @@ export function SectionHeader({
     >
       <div>
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-lg sm:text-xl font-bold text-stone-900 tracking-tight">{title}</h2>
+          <h2 className="text-base sm:text-lg font-semibold text-[#1A1D24] tracking-tight">{title}</h2>
           {badge}
         </div>
-        {subtitle && <p className="text-xs sm:text-sm text-stone-500 mt-0.5">{subtitle}</p>}
+        {subtitle && <p className="text-xs text-[#667085] mt-0.5">{subtitle}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2 shrink-0">{actions}</div>}
     </div>
@@ -380,7 +321,7 @@ export function SectionHeader({
 }
 
 /* ============================================================================
-   5. EmptyState & LoadingState
+   5. EmptyState & LoadingState — One line of text + one primary action, no illustrations
    ============================================================================ */
 
 interface EmptyStateProps {
@@ -392,37 +333,19 @@ interface EmptyStateProps {
 }
 
 export function EmptyState({
-  icon: Icon,
   title,
-  description,
   action,
   className,
 }: EmptyStateProps) {
-  const renderIcon = () => {
-    if (!Icon) return null
-    if (React.isValidElement(Icon)) return Icon
-    if (typeof Icon === 'function' || (typeof Icon === 'object' && Icon !== null)) {
-      const IconComp = Icon as React.ComponentType<{ className?: string }>
-      return <IconComp className="w-6 h-6" />
-    }
-    return null
-  }
-
   return (
     <div
       className={cn(
-        'py-12 px-4 text-center flex flex-col items-center justify-center gap-2',
+        'py-8 px-4 flex flex-col sm:flex-row items-center justify-between gap-3',
         className
       )}
     >
-      {Icon && (
-        <div className="w-12 h-12 rounded-xl bg-stone-100 text-stone-400 flex items-center justify-center mb-1">
-          {renderIcon()}
-        </div>
-      )}
-      <h3 className="text-base font-bold text-stone-800">{title}</h3>
-      {description && <p className="text-xs sm:text-sm text-stone-500 max-w-sm">{description}</p>}
-      {action && <div className="pt-2">{action}</div>}
+      <p className="text-sm text-[#667085]">{title}</p>
+      {action && <div className="shrink-0">{action}</div>}
     </div>
   )
 }
@@ -435,13 +358,18 @@ interface LoadingStateProps {
 export function LoadingState({ message = 'Loading...', className }: LoadingStateProps) {
   return (
     <div
+      role="status"
+      aria-live="polite"
       className={cn(
-        'py-12 px-4 flex flex-col items-center justify-center gap-3 text-stone-500',
+        'py-8 px-4 flex items-center justify-center gap-2.5 text-sm text-[#667085]',
         className
       )}
     >
-      <div className="w-7 h-7 border-3 border-stone-200 border-t-orange-700 rounded-full animate-spin" />
-      <p className="text-xs sm:text-sm font-medium">{message}</p>
+      <span
+        className="w-4 h-4 border-2 border-[#E3E5EA] border-t-[#1E2A4A] rounded-full animate-spin shrink-0"
+        aria-hidden="true"
+      />
+      <span>{message}</span>
     </div>
   )
 }

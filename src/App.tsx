@@ -15,6 +15,8 @@ const InvoicePage = lazy(() => import('./pages/InvoicePage'))
 const OrderPage = lazy(() => import('./pages/OrderPage'))
 const StaffPage = lazy(() => import('./pages/StaffPage'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
+const SignupPage = lazy(() => import('./pages/SignupPage'))
+const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'))
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'))
 
 function LoadingFallback() {
@@ -37,6 +39,8 @@ function App() {
             <Routes>
               <Route path="/" element={<LandingPage />} />
               <Route path="/login" element={<LoginPage />} />
+              <Route path="/signup" element={<SignupPage />} />
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
 
               {/* Protected Business Operations */}
               <Route

@@ -45,9 +45,7 @@ import {
   QrCode,
   Film,
   Star,
-  Eye,
-  Filter,
-  Package,
+  ExternalLink,
 } from 'lucide-react'
 
 interface StagedMediaFile {
@@ -111,7 +109,6 @@ export default function ProductTab() {
     }
   }
 
-  // Derive unique brands and collections for filter selectors
   const uniqueBrands = Array.from(new Set(products.map(p => p.brand).filter(Boolean))) as string[]
   const uniqueCollections = Array.from(new Set(products.map(p => p.collection_name).filter(Boolean))) as string[]
 
@@ -239,10 +236,9 @@ export default function ProductTab() {
     setFormSaving(true)
 
     try {
-      // Validate unique design number
       const isAvailable = await checkDesignNoAvailable(designNo, editingProduct?.id)
       if (!isAvailable) {
-        setFormError(`Design number "${designNo}" is already registered. Please specify a unique design number.`)
+        setFormError(`Design number "${designNo}" is already registered.`)
         setFormSaving(false)
         return
       }
@@ -266,14 +262,17 @@ export default function ProductTab() {
         savedProduct = await createProduct(productPayload as any)
       }
 
-      // Upload any staged files
       if (stagedFiles.length > 0 && savedProduct.id) {
         let primaryUrl: string | null = null
 
         for (let i = 0; i < stagedFiles.length; i++) {
           const item = stagedFiles[i]
           try {
-            const mediaUrl = await uploadProductMedia(savedProduct.id, item.file)
+            const targetBusinessId = savedProduct.business_id ?? business?.id
+            if (!targetBusinessId) {
+              throw new Error('Unable to determine active business for media upload.')
+            }
+            const mediaUrl = await uploadProductMedia(targetBusinessId, savedProduct.id, item.file)
             await createProductMedia(savedProduct.id, mediaUrl, item.type, i)
             if (item.isPrimary || (!primaryUrl && item.type === 'image')) {
               primaryUrl = mediaUrl
@@ -288,7 +287,6 @@ export default function ProductTab() {
         }
       }
 
-      // Cleanup
       stagedFiles.forEach(f => URL.revokeObjectURL(f.preview))
       setStagedFiles([])
       setShowForm(false)
@@ -300,7 +298,6 @@ export default function ProductTab() {
     }
   }
 
-  // QR Label Print / Download
   const handleOpenQrModal = async (product: Product) => {
     try {
       const qrData = await generateQRCodeForProduct(product.design_no, activeSlug)
@@ -316,38 +313,36 @@ export default function ProductTab() {
   }
 
   const activeCount = products.filter(p => p.is_active !== false).length
+  const hasActiveFilters =
+    brandFilter !== 'all' || collectionFilter !== 'all' || statusFilter !== 'all' || Boolean(searchQuery)
 
   return (
-    <div className="space-y-6">
-      {/* Action and Filter Bar */}
-      <div className="bg-white p-4 rounded-xl border border-stone-200/80 shadow-2xs space-y-4">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+    <div className="space-y-4">
+      {/* Toolbar: Search, Filters & Primary Action */}
+      <div className="bg-white p-4 rounded-[6px] border border-[#E3E5EA] space-y-3">
+        <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
           <div className="relative w-full sm:w-80">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#667085]" />
             <Input
               aria-label="Search products"
-              placeholder="Search design number, fabric, brand..."
+              placeholder="Search design no, brand, fabric..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 bg-stone-50/70"
+              className="pl-9"
             />
           </div>
-          <Button onClick={openCreateForm} className="w-full sm:w-auto bg-orange-700 hover:bg-orange-800 text-white shrink-0">
-            <Plus className="w-4 h-4 mr-1.5" /> New Product Design
+          <Button onClick={openCreateForm} className="w-full sm:w-auto shrink-0">
+            <Plus className="w-4 h-4" />
+            <span>Add Product</span>
           </Button>
         </div>
 
-        {/* Filter controls */}
-        <div className="flex flex-wrap items-center gap-2.5 pt-3 border-t border-stone-100 text-xs">
-          <span className="font-semibold text-stone-500 uppercase tracking-wider flex items-center gap-1 mr-1">
-            <Filter className="w-3.5 h-3.5" /> Filter:
-          </span>
-
+        <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-[#E3E5EA] text-xs">
           <select
             aria-label="Filter by brand"
             value={brandFilter}
             onChange={(e) => setBrandFilter(e.target.value)}
-            className="bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-1.5 font-medium text-stone-700 focus:outline-none focus:ring-2 focus:ring-orange-600/20 focus:border-orange-700"
+            className="h-8 bg-white border border-[#E3E5EA] rounded-[6px] px-2.5 text-xs font-medium text-[#1A1D24]"
           >
             <option value="all">All Brands</option>
             {uniqueBrands.map(b => <option key={b} value={b}>{b}</option>)}
@@ -357,7 +352,7 @@ export default function ProductTab() {
             aria-label="Filter by collection"
             value={collectionFilter}
             onChange={(e) => setCollectionFilter(e.target.value)}
-            className="bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-1.5 font-medium text-stone-700 focus:outline-none focus:ring-2 focus:ring-orange-600/20 focus:border-orange-700"
+            className="h-8 bg-white border border-[#E3E5EA] rounded-[6px] px-2.5 text-xs font-medium text-[#1A1D24]"
           >
             <option value="all">All Collections</option>
             {uniqueCollections.map(c => <option key={c} value={c}>{c}</option>)}
@@ -367,14 +362,14 @@ export default function ProductTab() {
             aria-label="Filter by status"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as any)}
-            className="bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-1.5 font-medium text-stone-700 focus:outline-none focus:ring-2 focus:ring-orange-600/20 focus:border-orange-700"
+            className="h-8 bg-white border border-[#E3E5EA] rounded-[6px] px-2.5 text-xs font-medium text-[#1A1D24]"
           >
             <option value="all">All Status ({products.length})</option>
-            <option value="active">Active Only ({activeCount})</option>
-            <option value="archived">Archived Only ({products.length - activeCount})</option>
+            <option value="active">Active ({activeCount})</option>
+            <option value="archived">Archived ({products.length - activeCount})</option>
           </select>
 
-          {(brandFilter !== 'all' || collectionFilter !== 'all' || statusFilter !== 'all' || searchQuery) && (
+          {hasActiveFilters && (
             <Button
               variant="ghost"
               size="sm"
@@ -384,131 +379,114 @@ export default function ProductTab() {
                 setStatusFilter('all')
                 setSearchQuery('')
               }}
-              className="text-orange-700 hover:text-orange-800 hover:bg-orange-50 h-7 px-2.5 text-xs font-semibold"
+              className="h-8 px-2.5 text-xs text-[#1E2A4A]"
             >
-              Reset Filters
+              Reset
             </Button>
           )}
 
-          <span className="ml-auto text-stone-500 font-medium">
-            Showing <strong className="text-stone-900">{filteredProducts.length}</strong> of {products.length} designs
+          <span className="ml-auto text-[#667085] tabular-nums">
+            {filteredProducts.length} of {products.length} designs
           </span>
         </div>
       </div>
 
-      {/* Products Table */}
-      <div className="bg-white border border-stone-200/80 rounded-xl overflow-hidden shadow-2xs">
+      {/* Dense Products Table */}
+      <div className="bg-white border border-[#E3E5EA] rounded-[6px] overflow-hidden">
         {loading ? (
           <LoadingState message="Loading product catalog..." />
         ) : filteredProducts.length === 0 ? (
           <EmptyState
-            icon={<Package className="w-6 h-6" />}
-            title="No designs match your criteria"
-            description="Try clearing your search filters or register a new textile design in the catalog."
+            title="No products found matching your filters."
             action={
               <Button onClick={openCreateForm} size="sm">
-                <Plus className="w-4 h-4 mr-1.5" /> Add Product Design
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Product</span>
               </Button>
             }
           />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-stone-50 border-b border-stone-200/80 text-stone-600 text-[11px] font-semibold uppercase tracking-wider">
+              <thead className="bg-[#F4F5F7] border-b border-[#E3E5EA] text-[#667085] text-xs font-medium">
                 <tr>
-                  <th className="px-4 py-3 text-left w-16">Photo</th>
-                  <th className="px-4 py-3 text-left">Design No</th>
-                  <th className="px-4 py-3 text-left">Brand & Collection</th>
-                  <th className="px-4 py-3 text-left">Fabric</th>
-                  <th className="px-4 py-3 text-right">Wholesale Rate</th>
-                  <th className="px-4 py-3 text-center">Set Ratio</th>
-                  <th className="px-4 py-3 text-center">Status</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+                  <th className="px-4 py-2.5 text-left w-14">Photo</th>
+                  <th className="px-4 py-2.5 text-left">Design No</th>
+                  <th className="px-4 py-2.5 text-left">Brand / Collection</th>
+                  <th className="px-4 py-2.5 text-left">Fabric</th>
+                  <th className="px-4 py-2.5 text-right">Rate</th>
+                  <th className="px-4 py-2.5 text-right">Pcs / Set</th>
+                  <th className="px-4 py-2.5 text-left">Status</th>
+                  <th className="px-4 py-2.5 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-stone-100">
+              <tbody className="divide-y divide-[#E3E5EA]">
                 {filteredProducts.map((p) => (
-                  <tr key={p.id} className="hover:bg-stone-50/70 transition-colors">
-                    <td className="px-4 py-3">
-                      {p.image_url ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMediaProduct(p)
-                            setShowMediaDialog(true)
-                          }}
-                          title="Manage Media Gallery"
-                          className="block rounded-lg overflow-hidden border border-stone-200 focus:outline-none focus:ring-2 focus:ring-orange-600/30"
-                        >
+                  <tr key={p.id} className="hover:bg-[#F4F5F7]/60">
+                    <td className="px-4 py-2.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMediaProduct(p)
+                          setShowMediaDialog(true)
+                        }}
+                        title="Manage Media"
+                        className="block w-10 h-10 rounded-[6px] overflow-hidden border border-[#E3E5EA] bg-[#F4F5F7] flex items-center justify-center cursor-pointer"
+                      >
+                        {p.image_url ? (
                           <img
                             src={p.image_url}
                             alt={`Design ${p.design_no}`}
-                            className="w-12 h-12 object-cover hover:opacity-90 transition-opacity"
+                            className="w-full h-full object-cover"
                           />
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMediaProduct(p)
-                            setShowMediaDialog(true)
-                          }}
-                          title="Upload Photos"
-                          className="w-12 h-12 bg-stone-100 rounded-lg flex items-center justify-center text-stone-400 border border-dashed border-stone-300 hover:bg-stone-200/70 transition-colors"
-                        >
-                          <ImageIcon className="w-5 h-5" />
-                        </button>
-                      )}
+                        ) : (
+                          <ImageIcon className="w-4 h-4 text-[#667085]" />
+                        )}
+                      </button>
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-stone-900 text-base tracking-tight">#{p.design_no}</span>
-                      </div>
+                    <td className="px-4 py-2.5 whitespace-nowrap">
+                      <div className="font-semibold text-[#1A1D24]">{p.design_no}</div>
                       <a
                         href={`/${activeSlug}/p/${encodeURIComponent(p.design_no)}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-[11px] text-orange-700 hover:text-orange-800 hover:underline inline-flex items-center gap-1 mt-0.5 font-medium"
+                        className="text-xs text-[#1E2A4A] hover:underline inline-flex items-center gap-1"
                       >
-                        <Eye className="w-3 h-3" /> Public Page
+                        <span>Public page</span>
+                        <ExternalLink className="w-3 h-3" />
                       </a>
                     </td>
-                    <td className="px-4 py-3">
-                      <p className="font-semibold text-stone-800">{p.brand || '—'}</p>
+                    <td className="px-4 py-2.5">
+                      <div className="font-medium text-[#1A1D24]">{p.brand || '—'}</div>
                       {p.collection_name && (
-                        <p className="text-xs text-stone-500 mt-0.5">{p.collection_name}</p>
+                        <div className="text-xs text-[#667085]">{p.collection_name}</div>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-stone-600 font-medium">{p.fabric || '—'}</td>
-                    <td className="px-4 py-3 text-right font-bold text-stone-900 tabular-nums">
-                      {p.rate ? formatCurrency(p.rate) : 'On Request'}
+                    <td className="px-4 py-2.5 text-xs text-[#667085]">{p.fabric || '—'}</td>
+                    <td className="px-4 py-2.5 text-right font-semibold text-[#1A1D24] tabular-nums whitespace-nowrap">
+                      {p.rate ? formatCurrency(p.rate) : '—'}
                     </td>
-                    <td className="px-4 py-3 text-center text-stone-700 text-xs">
-                      <span className="bg-stone-100 border border-stone-200/80 px-2.5 py-1 rounded-md font-mono font-semibold">
-                        {p.pcs_per_set || 1} pcs/set
-                      </span>
+                    <td className="px-4 py-2.5 text-right text-xs text-[#1A1D24] tabular-nums whitespace-nowrap">
+                      {p.pcs_per_set || 1}
                     </td>
-                    <td className="px-4 py-3 text-center">
+                    <td className="px-4 py-2.5 whitespace-nowrap">
                       <button
                         type="button"
                         onClick={() => handleToggleStatus(p)}
-                        title="Click to toggle catalog status"
-                        className="inline-flex focus:outline-none focus:ring-2 focus:ring-orange-600/30 rounded-md"
+                        title="Toggle active status"
+                        className="inline-flex rounded-[6px] cursor-pointer"
                       >
-                        <StatusBadge
-                          status={p.is_active !== false ? 'active' : 'archived'}
-                          className="cursor-pointer hover:opacity-85 transition-opacity"
-                        />
+                        <StatusBadge status={p.is_active !== false ? 'active' : 'archived'} />
                       </button>
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
+                    <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                      <div className="inline-flex items-center gap-1">
                         <Button
                           variant="ghost"
                           size="sm"
                           title="QR Code & Label"
                           onClick={() => handleOpenQrModal(p)}
-                          className="h-8 w-8 p-0 text-orange-700 hover:text-orange-800 hover:bg-orange-50"
+                          className="h-8 w-8 p-0 text-[#1E2A4A]"
                         >
                           <QrCode className="w-4 h-4" />
                         </Button>
@@ -520,7 +498,7 @@ export default function ProductTab() {
                             setMediaProduct(p)
                             setShowMediaDialog(true)
                           }}
-                          className="h-8 w-8 p-0 text-stone-600 hover:text-stone-900"
+                          className="h-8 w-8 p-0 text-[#667085] hover:text-[#1A1D24]"
                         >
                           <ImageIcon className="w-4 h-4" />
                         </Button>
@@ -529,7 +507,7 @@ export default function ProductTab() {
                           size="sm"
                           title="Edit Product"
                           onClick={() => openEditForm(p)}
-                          className="h-8 w-8 p-0 text-stone-600 hover:text-stone-900"
+                          className="h-8 w-8 p-0 text-[#667085] hover:text-[#1A1D24]"
                         >
                           <Edit2 className="w-4 h-4" />
                         </Button>
@@ -538,7 +516,7 @@ export default function ProductTab() {
                           size="sm"
                           title="Delete Product"
                           onClick={() => setDeleteConfirm(p.id)}
-                          className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                          className="h-8 w-8 p-0 text-[#B42318]"
                         >
                           <Trash2 className="w-4 h-4" />
                         </Button>
@@ -552,199 +530,200 @@ export default function ProductTab() {
         )}
       </div>
 
-      {/* Create / Edit Product Modal */}
+      {/* Add / Edit Product Right-Side Drawer */}
       <Dialog open={showForm} onOpenChange={setShowForm}>
-        <DialogContent className="sm:max-w-[560px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-bold text-stone-900">
-              {editingProduct ? `Edit Product — Design #${editingProduct.design_no}` : 'Add New Textile Design'}
+        <DialogContent className="fixed left-auto right-0 top-0 bottom-0 translate-x-0 translate-y-0 w-full max-w-[500px] h-full max-h-none rounded-none border-y-0 border-r-0 border-l border-[#E3E5EA] p-0 flex flex-col gap-0">
+          <DialogHeader className="px-5 py-4 border-b border-[#E3E5EA] shrink-0">
+            <DialogTitle>
+              {editingProduct ? `Edit Product — ${editingProduct.design_no}` : 'Add Product'}
             </DialogTitle>
           </DialogHeader>
 
-          <form onSubmit={handleSaveProduct} className="space-y-4 pt-2">
-            {formError && (
-              <p className="text-xs font-semibold text-red-700 bg-red-50 p-3 rounded-lg border border-red-200">
-                {formError}
-              </p>
-            )}
+          <form onSubmit={handleSaveProduct} className="flex-1 flex flex-col min-h-0">
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+              {formError && (
+                <p className="text-xs font-medium text-[#B42318] bg-white p-3 rounded-[6px] border border-[#B42318]">
+                  {formError}
+                </p>
+              )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div className="space-y-1.5">
+                  <Label htmlFor="prod-design-no">Design Number *</Label>
+                  <Input
+                    id="prod-design-no"
+                    value={formDesignNo}
+                    onChange={(e) => setFormDesignNo(e.target.value.toUpperCase())}
+                    placeholder="e.g. 4955"
+                    required
+                    className="font-semibold"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="prod-rate">Wholesale Rate (₹/pc)</Label>
+                  <Input
+                    id="prod-rate"
+                    type="number"
+                    step="0.01"
+                    value={formRate}
+                    onChange={(e) => setFormRate(e.target.value)}
+                    placeholder="e.g. 850"
+                    className="tabular-nums"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                <div className="space-y-1.5">
+                  <Label htmlFor="prod-brand">Brand</Label>
+                  <Input
+                    id="prod-brand"
+                    value={formBrand}
+                    onChange={(e) => setFormBrand(e.target.value)}
+                    placeholder="e.g. Kala"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="prod-collection">Collection</Label>
+                  <Input
+                    id="prod-collection"
+                    value={formCollection}
+                    onChange={(e) => setFormCollection(e.target.value)}
+                    placeholder="e.g. Silk Edition"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="prod-fabric">Fabric</Label>
+                  <Input
+                    id="prod-fabric"
+                    value={formFabric}
+                    onChange={(e) => setFormFabric(e.target.value)}
+                    placeholder="e.g. Pure Cotton"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div className="space-y-1.5">
+                  <Label htmlFor="prod-pcs-per-set">Pieces Per Set</Label>
+                  <Input
+                    id="prod-pcs-per-set"
+                    type="number"
+                    min="1"
+                    value={formPcsPerSet}
+                    onChange={(e) => setFormPcsPerSet(e.target.value)}
+                    placeholder="1"
+                    className="tabular-nums"
+                  />
+                </div>
+                <div className="flex items-center gap-2 sm:pt-6">
+                  <input
+                    type="checkbox"
+                    id="prod-is-active"
+                    checked={formIsActive}
+                    onChange={(e) => setFormIsActive(e.target.checked)}
+                    className="w-4 h-4 rounded border-[#E3E5EA] accent-[#1E2A4A]"
+                  />
+                  <Label htmlFor="prod-is-active" className="cursor-pointer text-sm font-medium text-[#1A1D24]">
+                    Active in public catalog
+                  </Label>
+                </div>
+              </div>
+
               <div className="space-y-1.5">
-                <Label htmlFor="prod-design-no">Design Number *</Label>
-                <Input
-                  id="prod-design-no"
-                  value={formDesignNo}
-                  onChange={(e) => setFormDesignNo(e.target.value.toUpperCase())}
-                  placeholder="e.g. 4955"
-                  required
-                  className="font-bold text-stone-900"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="prod-rate">Wholesale Rate (₹/pc)</Label>
-                <Input
-                  id="prod-rate"
-                  type="number"
-                  step="0.01"
-                  value={formRate}
-                  onChange={(e) => setFormRate(e.target.value)}
-                  placeholder="e.g. 850"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-              <div className="space-y-1.5">
-                <Label htmlFor="prod-brand">Brand</Label>
-                <Input
-                  id="prod-brand"
-                  value={formBrand}
-                  onChange={(e) => setFormBrand(e.target.value)}
-                  placeholder="e.g. Kala"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="prod-collection">Collection</Label>
-                <Input
-                  id="prod-collection"
-                  value={formCollection}
-                  onChange={(e) => setFormCollection(e.target.value)}
-                  placeholder="e.g. Silk Edition"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="prod-fabric">Fabric</Label>
-                <Input
-                  id="prod-fabric"
-                  value={formFabric}
-                  onChange={(e) => setFormFabric(e.target.value)}
-                  placeholder="e.g. Pure Cotton"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <div className="space-y-1.5">
-                <Label htmlFor="prod-pcs-per-set">Pieces Per Set</Label>
-                <Input
-                  id="prod-pcs-per-set"
-                  type="number"
-                  min="1"
-                  value={formPcsPerSet}
-                  onChange={(e) => setFormPcsPerSet(e.target.value)}
-                  placeholder="1"
-                />
-              </div>
-              <div className="flex items-center gap-2.5 sm:pt-6">
-                <input
-                  type="checkbox"
-                  id="prod-is-active"
-                  checked={formIsActive}
-                  onChange={(e) => setFormIsActive(e.target.checked)}
-                  className="w-4 h-4 rounded text-orange-700 border-stone-300 focus:ring-orange-600"
-                />
-                <Label htmlFor="prod-is-active" className="cursor-pointer text-sm font-medium text-stone-800">
-                  Active in Public Catalog
-                </Label>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="prod-description">Description / Work Notes</Label>
-              <textarea
-                id="prod-description"
-                value={formDescription}
-                onChange={(e) => setFormDescription(e.target.value)}
-                placeholder="Product specifications, embroidery details, wash care..."
-                rows={2}
-                className="w-full text-sm rounded-lg border border-stone-300 bg-white p-2.5 focus:outline-none focus:ring-2 focus:ring-orange-600/20 focus:border-orange-700"
-              />
-            </div>
-
-            {/* Media Upload & Preview */}
-            <div className="space-y-2.5 border-t border-stone-200/80 pt-3.5">
-              <div className="flex justify-between items-center">
-                <Label className="text-stone-800 font-semibold">Product Photographs & Videos</Label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="h-8 text-xs border-dashed"
-                >
-                  <Plus className="w-3.5 h-3.5 mr-1" /> Add Photos / Videos
-                </Button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  accept="image/*,video/*"
-                  onChange={handleFileChange}
-                  className="hidden"
+                <Label htmlFor="prod-description">Description</Label>
+                <textarea
+                  id="prod-description"
+                  value={formDescription}
+                  onChange={(e) => setFormDescription(e.target.value)}
+                  placeholder="Product specifications, embroidery details, wash care..."
+                  rows={3}
+                  className="w-full text-sm rounded-[6px] border border-[#E3E5EA] bg-white p-2.5 text-[#1A1D24] placeholder:text-[#667085]"
                 />
               </div>
 
-              {stagedFiles.length > 0 && (
-                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 pt-2">
-                  {stagedFiles.map((sf) => (
-                    <div
-                      key={sf.id}
-                      className={`relative rounded-lg overflow-hidden border-2 group aspect-square bg-stone-100 ${
-                        sf.isPrimary ? 'border-orange-600 ring-2 ring-orange-200' : 'border-stone-200'
-                      }`}
-                    >
-                      {sf.type === 'video' ? (
-                        <video src={sf.preview} className="w-full h-full object-cover" />
-                      ) : (
-                        <img src={sf.preview} alt="" className="w-full h-full object-cover" />
-                      )}
+              {/* Media Upload */}
+              <div className="space-y-2.5 border-t border-[#E3E5EA] pt-4">
+                <div className="flex justify-between items-center">
+                  <Label className="text-[#1A1D24] font-medium">Photos &amp; Videos</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Files</span>
+                  </Button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    accept="image/*,video/*"
+                    onChange={handleFileChange}
+                    className="hidden"
+                  />
+                </div>
 
-                      {/* Controls overlay — always accessible on touch devices, hover on desktop */}
-                      <div className="absolute inset-0 bg-black/40 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex items-end sm:items-center justify-between sm:justify-center p-1.5 gap-1.5">
-                        {sf.type === 'image' && (
+                {stagedFiles.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2 pt-1">
+                    {stagedFiles.map((sf) => (
+                      <div
+                        key={sf.id}
+                        className={`relative rounded-[6px] overflow-hidden border aspect-square bg-[#F4F5F7] ${
+                          sf.isPrimary ? 'border-[#1E2A4A] border-2' : 'border-[#E3E5EA]'
+                        }`}
+                      >
+                        {sf.type === 'video' ? (
+                          <video src={sf.preview} className="w-full h-full object-cover" />
+                        ) : (
+                          <img src={sf.preview} alt="" className="w-full h-full object-cover" />
+                        )}
+
+                        <div className="absolute inset-x-0 bottom-0 bg-[#1A1D24]/70 p-1 flex items-center justify-between gap-1">
+                          {sf.type === 'image' && (
+                            <button
+                              type="button"
+                              title="Set primary photo"
+                              onClick={() => setPrimaryStaged(sf.id)}
+                              className="p-1 rounded bg-white text-[#1A1D24]"
+                            >
+                              <Star className="w-3 h-3" />
+                            </button>
+                          )}
                           <button
                             type="button"
-                            title="Set as primary photo"
-                            onClick={() => setPrimaryStaged(sf.id)}
-                            className={`p-1.5 rounded-full shadow-xs ${
-                              sf.isPrimary ? 'bg-orange-600 text-white' : 'bg-white/90 hover:bg-white text-stone-800'
-                            }`}
+                            title="Remove file"
+                            onClick={() => removeStagedFile(sf.id)}
+                            className="p-1 rounded bg-[#B42318] text-white ml-auto"
                           >
-                            <Star className="w-3.5 h-3.5" />
+                            <Trash2 className="w-3 h-3" />
                           </button>
-                        )}
-                        <button
-                          type="button"
-                          title="Remove file"
-                          onClick={() => removeStagedFile(sf.id)}
-                          className="p-1.5 rounded-full bg-red-600 text-white hover:bg-red-700 shadow-xs ml-auto sm:ml-0"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                        </div>
 
-                      {sf.isPrimary && (
-                        <div className="absolute top-1 left-1 bg-orange-700 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-xs">
-                          PRIMARY
-                        </div>
-                      )}
-                      {sf.type === 'video' && (
-                        <div className="absolute top-1 right-1 bg-black/60 text-white p-0.5 rounded">
-                          <Film className="w-3 h-3" />
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
+                        {sf.isPrimary && (
+                          <div className="absolute top-1 left-1 bg-[#1E2A4A] text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-[4px]">
+                            Primary
+                          </div>
+                        )}
+                        {sf.type === 'video' && (
+                          <div className="absolute top-1 right-1 bg-[#1A1D24]/80 text-white p-0.5 rounded-[4px]">
+                            <Film className="w-3 h-3" />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-4 border-t border-stone-200/80">
+            <div className="px-5 py-3.5 border-t border-[#E3E5EA] bg-white flex justify-end gap-2 shrink-0">
               <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={formSaving} className="bg-orange-700 hover:bg-orange-800 text-white">
-                {formSaving ? 'Saving Design...' : editingProduct ? 'Update Product' : 'Create Product'}
+              <Button type="submit" disabled={formSaving}>
+                {formSaving ? 'Saving...' : editingProduct ? 'Save Changes' : 'Create Product'}
               </Button>
             </div>
           </form>
@@ -753,43 +732,39 @@ export default function ProductTab() {
 
       {/* QR Code & Label Modal */}
       <Dialog open={previewQrProduct !== null} onOpenChange={() => setPreviewQrProduct(null)}>
-        <DialogContent className="sm:max-w-[420px]">
+        <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
-            <DialogTitle className="text-lg font-bold text-stone-900">
-              Product QR Label — Design #{previewQrProduct?.design_no}
-            </DialogTitle>
+            <DialogTitle>QR Label — Design {previewQrProduct?.design_no}</DialogTitle>
           </DialogHeader>
 
           {previewQrProduct && previewQrDataUrl && (
             <div className="space-y-4 py-2 text-center">
-              <div className="p-4 bg-white border border-stone-200 rounded-xl shadow-2xs inline-block mx-auto">
+              <div className="p-4 bg-white border border-[#E3E5EA] rounded-[6px] inline-block mx-auto">
                 <img
                   src={previewQrDataUrl}
                   alt={`QR for ${previewQrProduct.design_no}`}
                   className="w-48 h-48 mx-auto"
                 />
-                <p className="text-xs font-mono text-stone-500 mt-2">
+                <p className="text-xs font-mono text-[#667085] mt-2">
                   /{activeSlug}/p/{previewQrProduct.design_no}
                 </p>
               </div>
 
-              <div className="text-xs text-stone-500 leading-relaxed">
-                This QR code permanently routes buyers and shop staff to Design #{previewQrProduct.design_no}. It remains valid even after price or photo updates.
-              </div>
-
-              <div className="flex gap-2.5 pt-2">
+              <div className="flex gap-2">
                 <Button
                   variant="outline"
                   className="flex-1"
                   onClick={() => downloadQRCode(previewQrDataUrl, `QR_${previewQrProduct.design_no}`)}
                 >
-                  <Download className="w-4 h-4 mr-1.5" /> Download PNG
+                  <Download className="w-4 h-4" />
+                  <span>Download PNG</span>
                 </Button>
                 <Button
-                  className="flex-1 bg-stone-900 hover:bg-stone-800 text-white"
+                  className="flex-1"
                   onClick={() => handlePrintLabel(previewQrProduct, previewQrDataUrl)}
                 >
-                  <Printer className="w-4 h-4 mr-1.5" /> Print Label
+                  <Printer className="w-4 h-4" />
+                  <span>Print Label</span>
                 </Button>
               </div>
             </div>
@@ -797,34 +772,32 @@ export default function ProductTab() {
         </DialogContent>
       </Dialog>
 
-      {/* Media Manager for existing products */}
-      {mediaProduct && (
-        <MediaManager
-          product={mediaProduct}
-          open={showMediaDialog}
-          onOpenChange={(open) => {
-            setShowMediaDialog(open)
-            if (!open) loadProducts()
-          }}
-        />
-      )}
+      {/* Media Manager */}
+      <MediaManager
+        product={mediaProduct}
+        open={showMediaDialog}
+        onOpenChange={(open) => {
+          setShowMediaDialog(open)
+          if (!open) loadProducts()
+        }}
+      />
 
       {/* Delete Confirmation */}
       <AlertDialog open={deleteConfirm !== null} onOpenChange={() => setDeleteConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Product Design</AlertDialogTitle>
+            <AlertDialogTitle>Delete Product</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to permanently delete this design and its associated media files? This action cannot be undone.
+              This will permanently remove the product design and its uploaded media.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex justify-end gap-2">
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => deleteConfirm && handleDelete(deleteConfirm)}
-              className="bg-red-700 hover:bg-red-800 text-white"
+              onClick={() => deleteConfirm !== null && handleDelete(deleteConfirm)}
+              className="bg-[#B42318] hover:bg-[#911C13] text-white"
             >
-              Delete Product
+              Delete
             </AlertDialogAction>
           </div>
         </AlertDialogContent>
