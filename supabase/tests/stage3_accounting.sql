@@ -162,6 +162,52 @@ BEGIN
     RAISE EXCEPTION 'FAIL: Idempotent voucher replay created duplicate voucher';
   END IF;
 
+  -- Idempotency payload-hash conflict (same key, different amount) MUST fail with zero partial rows
+  SELECT COUNT(*) INTO v_cnt FROM public.vouchers WHERE business_id = v_biz_a;
+  v_failed := FALSE;
+  BEGIN
+    PERFORM public.post_voucher_tx(
+      v_biz_a, v_branch_a, 'SALES', CURRENT_DATE,
+      jsonb_build_array(
+        jsonb_build_object('account_id', v_acc_debtors, 'debit', 9999, 'credit', 0),
+        jsonb_build_object('account_id', v_acc_sales, 'debit', 0, 'credit', 9999)
+      ),
+      'Conflicting payload', 'SALES_INVOICE', 101, 'INR', 1.0,
+      '33333333-1111-4111-8111-333333333333'::UUID
+    );
+  EXCEPTION WHEN raise_exception THEN v_failed := TRUE; END;
+  IF NOT v_failed THEN RAISE EXCEPTION 'FAIL: Conflicting idempotency payload was accepted'; END IF;
+  IF (SELECT COUNT(*) FROM public.vouchers WHERE business_id = v_biz_a) <> v_cnt THEN
+    RAISE EXCEPTION 'FAIL: Failed idempotency conflict left partial voucher rows';
+  END IF;
+
+  -- Multi-currency unbalanced transaction-currency voucher MUST fail even if base rounds equal
+  v_failed := FALSE;
+  BEGIN
+    PERFORM public.post_voucher_tx(
+      v_biz_a, v_branch_a, 'JOURNAL', CURRENT_DATE,
+      jsonb_build_array(
+        jsonb_build_object('account_id', v_acc_cash, 'debit', 100.01, 'credit', 0),
+        jsonb_build_object('account_id', v_acc_bank, 'debit', 0, 'credit', 100.00)
+      ),
+      'Unbalanced FX test', NULL, NULL, 'USD', 0.001, NULL
+    );
+  EXCEPTION WHEN raise_exception THEN v_failed := TRUE; END;
+  IF NOT v_failed THEN RAISE EXCEPTION 'FAIL: Unbalanced transaction-currency voucher was accepted'; END IF;
+
+  -- Valid multi-currency contra voucher: USD 100 @ 83.50 -> base INR 8,350 (no P&L impact)
+  v_res := public.post_voucher_tx(
+    v_biz_a, v_branch_a, 'CONTRA', CURRENT_DATE,
+    jsonb_build_array(
+      jsonb_build_object('account_id', v_acc_bank, 'debit', 100, 'credit', 0),
+      jsonb_build_object('account_id', v_acc_cash, 'debit', 0, 'credit', 100)
+    ),
+    'FX USD transfer', NULL, NULL, 'USD', 83.50, NULL
+  );
+  IF (v_res->>'base_total_amount')::NUMERIC <> 8350 THEN
+    RAISE EXCEPTION 'FAIL: Expected base_total_amount 8350 for USD 100 @ 83.50, got %', v_res->>'base_total_amount';
+  END IF;
+
   -- Expense voucher: DR Freight 3,000 / CR Cash 3,000 (Net Profit will be 10,000 - 3,000 = 7,000)
   v_res := public.post_voucher_tx(
     v_biz_a, v_branch_a, 'PAYMENT', CURRENT_DATE,
@@ -285,11 +331,36 @@ BEGIN
   );
   v_rcpt_2_id := (v_res->>'voucher_id')::BIGINT;
 
+  SELECT COUNT(*) INTO v_cnt FROM public.bill_allocations WHERE business_id = v_biz_a;
   v_failed := FALSE;
   BEGIN
     PERFORM public.allocate_bill_payment_tx(v_biz_a, v_sales_vch_id, v_rcpt_2_id, 5000, CURRENT_DATE);
   EXCEPTION WHEN raise_exception THEN v_failed := TRUE; END;
   IF NOT v_failed THEN RAISE EXCEPTION 'FAIL: Invoice over-settlement was allowed'; END IF;
+  IF (SELECT COUNT(*) FROM public.bill_allocations WHERE business_id = v_biz_a) <> v_cnt THEN
+    RAISE EXCEPTION 'FAIL: Failed allocation left partial rows';
+  END IF;
+
+  -- Wrong-side settlement (SALES invoice settled by PAYMENT voucher) MUST fail
+  v_failed := FALSE;
+  BEGIN
+    PERFORM public.allocate_bill_payment_tx(v_biz_a, v_sales_vch_id, v_exp_vch_id, 100, CURRENT_DATE);
+  EXCEPTION WHEN raise_exception THEN v_failed := TRUE; END;
+  IF NOT v_failed THEN RAISE EXCEPTION 'FAIL: SALES invoice settled by PAYMENT voucher was allowed'; END IF;
+
+  -- Backdated allocation (allocation_date < voucher_date) MUST fail
+  v_failed := FALSE;
+  BEGIN
+    PERFORM public.allocate_bill_payment_tx(v_biz_a, v_sales_vch_id, v_rcpt_2_id, 100, CURRENT_DATE - 1);
+  EXCEPTION WHEN raise_exception THEN v_failed := TRUE; END;
+  IF NOT v_failed THEN RAISE EXCEPTION 'FAIL: Backdated bill allocation was allowed'; END IF;
+
+  -- Reversing a voucher that already has active bill_allocations MUST fail
+  v_failed := FALSE;
+  BEGIN
+    PERFORM public.reverse_voucher_tx(v_biz_a, v_sales_vch_id, CURRENT_DATE, 'Try reversing allocated invoice');
+  EXCEPTION WHEN raise_exception THEN v_failed := TRUE; END;
+  IF NOT v_failed THEN RAISE EXCEPTION 'FAIL: Reversing an allocated invoice was allowed'; END IF;
 
   -- ==================================================================
   -- TEST 6: Opening Balance Verification & FY Close Guards
@@ -394,6 +465,13 @@ BEGIN
     );
   EXCEPTION WHEN raise_exception THEN v_failed := TRUE; END;
   IF NOT v_failed THEN RAISE EXCEPTION 'FAIL: Voucher posting into locked FY succeeded'; END IF;
+
+  -- Modifying opening_balance after an FY is locked MUST fail
+  v_failed := FALSE;
+  BEGIN
+    UPDATE public.accounts SET opening_balance = 99999 WHERE id = v_acc_cash;
+  EXCEPTION WHEN raise_exception THEN v_failed := TRUE; END;
+  IF NOT v_failed THEN RAISE EXCEPTION 'FAIL: Modifying opening_balance after FY lock was allowed'; END IF;
 
   -- ==================================================================
   -- TEST 9: Anon & Internal Helper Privilege Guards

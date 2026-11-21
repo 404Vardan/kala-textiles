@@ -124,6 +124,10 @@ export async function fetchVoucherEntries(voucherId: number): Promise<VoucherEnt
 }
 
 export async function fetchBillAllocations(voucherId: number): Promise<BillAllocation[]> {
+  if (!Number.isInteger(voucherId) || voucherId <= 0) {
+    throw new Error('Valid positive integer voucherId is required')
+  }
+
   const { data, error } = await supabase
     .from('bill_allocations')
     .select('*')
