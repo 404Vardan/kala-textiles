@@ -572,9 +572,9 @@ BEGIN
 
   -- 2. Seed default system roles & resolve Owner role_id
   PERFORM public.seed_default_business_roles(v_biz.id);
-  SELECT id INTO v_owner_role_id
-  FROM public.roles
-  WHERE business_id = v_biz.id AND name = 'Owner'
+  SELECT r.id INTO v_owner_role_id
+  FROM public.roles AS r
+  WHERE r.business_id = v_biz.id AND r.name = 'Owner'
   LIMIT 1;
 
   -- 3. Create owner membership for auth.uid()
