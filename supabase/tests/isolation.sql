@@ -385,9 +385,11 @@ BEGIN
   GET DIAGNOSTICS v_rows = ROW_COUNT;
   IF v_rows <> 0 THEN RAISE EXCEPTION 'FAIL: User A updated Business B in inventory_locations'; END IF;
 
-  UPDATE public.inventory_stock SET sets = 999 WHERE id = v_stock_b;
-  GET DIAGNOSTICS v_rows = ROW_COUNT;
-  IF v_rows <> 0 THEN RAISE EXCEPTION 'FAIL: User A updated Business B in inventory_stock'; END IF;
+  BEGIN
+    UPDATE public.inventory_stock SET sets = 999 WHERE id = v_stock_b;
+    GET DIAGNOSTICS v_rows = ROW_COUNT;
+    IF v_rows <> 0 THEN RAISE EXCEPTION 'FAIL: User A updated Business B in inventory_stock'; END IF;
+  EXCEPTION WHEN insufficient_privilege THEN NULL; END;
 
   UPDATE public.stock_movements SET notes = 'Hacked' WHERE id = v_move_b;
   GET DIAGNOSTICS v_rows = ROW_COUNT;
@@ -454,9 +456,11 @@ BEGIN
   GET DIAGNOSTICS v_rows = ROW_COUNT;
   IF v_rows <> 0 THEN RAISE EXCEPTION 'FAIL: User A deleted Business B from inventory_locations'; END IF;
 
-  DELETE FROM public.inventory_stock WHERE id = v_stock_b;
-  GET DIAGNOSTICS v_rows = ROW_COUNT;
-  IF v_rows <> 0 THEN RAISE EXCEPTION 'FAIL: User A deleted Business B from inventory_stock'; END IF;
+  BEGIN
+    DELETE FROM public.inventory_stock WHERE id = v_stock_b;
+    GET DIAGNOSTICS v_rows = ROW_COUNT;
+    IF v_rows <> 0 THEN RAISE EXCEPTION 'FAIL: User A deleted Business B from inventory_stock'; END IF;
+  EXCEPTION WHEN insufficient_privilege THEN NULL; END;
 
   DELETE FROM public.stock_movements WHERE id = v_move_b;
   GET DIAGNOSTICS v_rows = ROW_COUNT;

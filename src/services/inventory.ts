@@ -51,41 +51,6 @@ export async function fetchStockByProduct(productId: number): Promise<InventoryS
   return data as InventoryStock[]
 }
 
-export async function upsertStock(
-  productId: number,
-  locationId: number,
-  sets: number,
-  totalPcs: number,
-  businessId?: number
-): Promise<InventoryStock> {
-  if (sets < 0 || totalPcs < 0) {
-    throw new Error('Stock quantities cannot be negative')
-  }
-
-  const payload: Record<string, unknown> = {
-    product_id: productId,
-    location_id: locationId,
-    sets,
-    total_pcs: totalPcs,
-    updated_at: new Date().toISOString(),
-  }
-
-  if (businessId !== undefined) {
-    payload.business_id = businessId
-  }
-
-  const { data, error } = await supabase
-    .from('inventory_stock')
-    .upsert(payload, { onConflict: 'business_id,product_id,location_id' })
-    .select()
-
-  if (error) throw error
-  if (!data?.[0]) {
-    throw new Error('Failed to upsert inventory stock')
-  }
-  return data[0] as InventoryStock
-}
-
 // Transactional Stock Intake (Godown Inward) — strictly via secured database RPC
 export async function intakeStock(
   productId: number,
