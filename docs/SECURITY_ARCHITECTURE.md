@@ -21,13 +21,25 @@ Kala enforces **fail-closed request-scoped tenancy**:
 4. **Explicit `p_business_id` Validation on Privileged RPCs**:
    - All Stage 2 RPCs (`intake_set_stock_v2`, `receive_taka_lot_tx`, `transfer_taka_tx`, `split_taka_tx`, `verify_inventory_integrity`) require `p_business_id IS NOT NULL AND p_business_id = public.current_business_id()` in addition to `has_permission()` / `is_business_member()`.
 
-### 1.2 `SECURITY DEFINER` Function Contract
-Every privileged RPC in Kala follows this mandatory contract:
-- Declares `SECURITY DEFINER` and pins `SET search_path = public, pg_temp`.
-- Explicitly runs `REVOKE ALL ON FUNCTION ... FROM PUBLIC, anon;` and grants `EXECUTE` only to `authenticated` (or revokes from `authenticated` as well for internal helpers).
-- Validates `auth.uid() IS NOT NULL`.
-- Validates active company context (`current_business_id()`) and server-side RBAC (`has_permission(p_business_id, '<permission>')`).
-- Never trusts client-supplied `created_by`, `actor_user_id`, or `pcs_per_set` / cost overrides when authoritative server values exist.
+### 1.2 Database Function Security Contracts (By Function Class)
+
+Database functions in Kala fall into four distinct categories, each with its own security contract:
+
+1. **Privileged Transactional RPCs** (e.g., `intake_set_stock_v2`, `receive_taka_lot_tx`, `transfer_taka_tx`, `split_taka_tx`, `transfer_stock_tx`, `confirm_order_and_deduct_stock_tx`):
+   - Declare `SECURITY DEFINER` and pin `SET search_path = public, pg_temp`.
+   - `REVOKE ALL` from `PUBLIC` and `anon`; `GRANT EXECUTE` only to `authenticated`.
+   - Verify `auth.uid() IS NOT NULL`, enforce active company scope (`p_business_id = public.current_business_id()` or entity `business_id = public.current_business_id()`), and enforce server-side RBAC (`public.has_permission(...)`).
+   - Enforce open financial year (`assert_financial_year_open`) and posting chronology where applicable, and derive `created_by` / `actor_user_id` server-side from `auth.uid()`.
+2. **Authenticated Read-Only & Reconciliation Functions** (e.g., `verify_inventory_integrity`, `get_dashboard_summary`, `list_business_members`):
+   - Declare `STABLE` (where side-effect-free), pin `SET search_path = public, pg_temp`, and revoke execution from `PUBLIC` and `anon`.
+   - Verify `auth.uid() IS NOT NULL`, enforce active company scope (`current_business_id()`) and membership (or `is_business_owner()` for owner-only views like `list_business_members`).
+   - Do **not** require write RBAC, open financial year locks, or chronological posting guards because they perform no mutations.
+3. **Public Gateway RPCs** (e.g., `get_public_product`, `get_public_order`, `get_public_invoice`, `submit_order_request`, `create_public_inquiry`):
+   - Declare `SECURITY DEFINER`, pin `SET search_path = public, pg_temp`, and explicitly grant `EXECUTE` to `anon` and `authenticated`.
+   - Return strictly sanitized DTOs, fail closed on unknown/inactive records, and enforce hourly rate limits via `public_request_log` on public write endpoints.
+4. **Internal Helpers & Trigger Functions**:
+   - **Internal helpers** (`claim_idempotency_key`, `complete_idempotency_key`, `record_audit_event`, `assert_chronological_stock_date`, `assert_chronological_taka_date`) are **revoked from `PUBLIC`, `anon`, and `authenticated`** and may only be invoked inside trusted `SECURITY DEFINER` orchestrators.
+   - **Trigger functions** (`guard_audit_events_immutable`, `guard_stock_ledger_immutable`, `guard_locked_financial_year`, `guard_system_roles`, `guard_last_business_owner`, `bump_row_version`) pin `SET search_path = public, pg_temp` and run automatically on table DML to enforce structural invariants regardless of caller.
 
 ### 1.3 Revoked Internal Helpers (`014`, `016`, `019`)
 The following internal functions are **revoked from `PUBLIC`, `anon`, and `authenticated`** and may only be invoked by trusted `SECURITY DEFINER` orchestrator RPCs:
@@ -76,3 +88,4 @@ All mutations must flow through audited, FY-checked, transactional RPCs.
 - **Stage 3**: Unconditional immutability trigger on posted `vouchers` & `voucher_entries`; single-reversal uniqueness index; dual-locked `bill_allocations`.
 - **Stage 7**: Tenant-safe AI assistant restricted strictly to whitelisted read-only SQL RPCs (zero raw SQL execution).
 - **Stage 8**: Strict separation between Platform Super-Admin governance tables and tenant RLS (see [`PLATFORM_ADMIN_ARCHITECTURE.md`](PLATFORM_ADMIN_ARCHITECTURE.md)).
+

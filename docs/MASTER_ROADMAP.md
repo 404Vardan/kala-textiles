@@ -7,7 +7,8 @@
 
 ## Status Legend
 
-- **Implemented**: Merged to `main` and verified against PostgreSQL (PGlite) + `tsc` + `vite build` + CI.
+- **Implemented**: Software or migrations merged to `main` and verified against PostgreSQL (PGlite) + `tsc` + `vite build` + CI.
+- **Approved (Architecture Milestone)**: Design/architecture blueprint signed off (no runtime software delivered by this milestone itself).
 - **In Progress**: Active branch or open PR under review.
 - **Designed**: Architecture and database contract finalized; implementation not yet started.
 - **Planned**: Scheduled for a future stage.
@@ -19,7 +20,7 @@
 | Stage | Module / Focus | Migrations | Status | Mandatory Exit Gates |
 | :---: | :--- | :---: | :---: | :--- |
 | **Pre-ERP** | **Phase 1 & Phase 2 Baseline** (Auth, QR Catalog, Buyer Order Requests, Team Invites, Storage Tenancy, Rate Limits, Commercial Flat ERP UI) | `001`–`010` | **Implemented** | Tenant isolation (`isolation.sql`), public QR & order-request gateway fail-closed checks, responsive 1280px/390px UI verification. |
-| **Stage 0** | **ERP Target Architecture Blueprint** | *(Design)* | **Implemented** | Hardened Rev 3 blueprint signed off (archived at [`archive/ERP_ARCHITECTURE_Rev3.md`](archive/ERP_ARCHITECTURE_Rev3.md)). |
+| **Stage 0** | **ERP Target Architecture Blueprint** | *(Design)* | **Approved (Architecture Milestone)** | Hardened Rev 3 blueprint signed off (archived at [`archive/ERP_ARCHITECTURE_Rev3.md`](archive/ERP_ARCHITECTURE_Rev3.md)). |
 | **Stage 1** | **Kala Core** (Multi-Company `x-business-id` Tenancy, Branches, Non-Overlapping FYs & Lock Guards, Document Counters, Granular RBAC, Payload-Hashed Idempotency, Immutable Audit) | `011`–`014` | **Implemented** | Isolated `001`–`014` PostgreSQL suite (`stage1_core.sql` + `isolation.sql`), fail-closed multi-company headers, locked FY immutability, revoked internal helpers. |
 | **Stage 2** | **Unified Inventory & Valuation Engine** (`stock_ledger`, MWAC, Variants, Lots, Serialized Takas, Split Lineage, 3-Way Reconciliation, Direct-Write Lock on `inventory_stock`) | `015`–`019` | **Implemented** | Full `001`–`019` PostgreSQL suite (`stage2_inventory.sql` + regressions), MWAC & legacy MWAC preservation, reserved-stock guard, taka chronology, 3-way `verify_inventory_integrity()`. |
 | **Docs** | **Authoritative ERP Documentation Overhaul** | *(Docs)* | **In Progress** | Complete 11-doc architecture suite + refreshed `README.md` & `SUPABASE_SETUP.md` strictly separating Implemented vs. Planned. |
@@ -39,3 +40,4 @@ To keep `main` permanently deployable:
 2. Each stage PR must pass sequential PostgreSQL migration execution from `001` through HEAD, all SQL regression suites, `npx tsc --noEmit`, `npm run build`, and GitHub Actions CI before merging.
 3. Hosted/production Supabase deployments are executed only via an explicit deployment plan—never implicitly during feature development.
 4. Documentation (`IMPLEMENTATION_STATUS.md`, `DATABASE_ARCHITECTURE.md`, `API_AND_RPC_REFERENCE.md`) is updated at the close of every stage so docs and code never drift.
+

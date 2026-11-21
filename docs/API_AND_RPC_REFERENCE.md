@@ -42,20 +42,27 @@ For multi-company users, omitting or sending an unauthorized `x-business-id` **f
 
 ## 3. Implemented Unified Inventory & Valuation RPCs (`015`–`019`)
 
-All Stage 2 RPCs enforce `auth.uid() IS NOT NULL`, `p_business_id = current_business_id()`, server-side RBAC, open FY validation, and chronological posting guards.
+Stage 2 separates **transactional stock mutation RPCs** (which enforce write permissions, open financial years, and posting chronology) from **read-only reconciliation** (`verify_inventory_integrity`).
 
-| RPC | Permission | Purpose | Frontend Wrapper |
-| :--- | :--- | :--- | :--- |
-| `intake_set_stock_v2(p_business_id, p_branch_id, p_product_id, p_location_id, p_sets, p_unit_cost, p_movement_date, p_staff_name, p_notes, p_ref_no, p_idempotency_key)` | `inventory.write` | MWAC SET stock intake + `stock_ledger` append + `stock_movements` mirror + payload-hashed idempotency. | `intakeSetStockV2()` in `takaInventory.ts` |
-| `intake_stock_tx(p_product_id, p_location_id, p_sets, p_staff_name, p_notes, p_ref_no)` | `inventory.write` | Legacy-compatible SET intake; preserves existing `avg_unit_cost` (does not dilute MWAC with `0`). | `intakeStock()` in `inventory.ts` |
-| `transfer_stock_tx(p_product_id, p_from_location_id, p_to_location_id, p_sets, p_staff_name, p_notes, p_ref_no)` | `inventory.transfer` | Deadlock-free atomic SET transfer emitting 2 linked `stock_ledger` rows (`TRANSFER_OUT`/`TRANSFER_IN`) preserving source MWAC. | `transferStock()` in `inventory.ts` |
-| `receive_taka_lot_tx(p_business_id, p_branch_id, p_product_id, p_location_id, p_lot_no, p_landed_cost_per_unit, p_takas, p_movement_date, p_variant_id, p_supplier_party_id, p_shade_no, p_notes, p_idempotency_key)` | `inventory.write` | Atomically creates `inventory_lots`, serialized `inventory_takas`, and `stock_ledger` rows under one `transaction_group_id`. Validates active branch, variant, and supplier party ownership. | `receiveTakaLot()` in `takaInventory.ts` |
-| `transfer_taka_tx(p_business_id, p_taka_id, p_to_location_id, p_movement_date, p_notes, p_idempotency_key)` | `inventory.transfer` | Atomic taka transfer emitting 2 linked `stock_ledger` rows at exact lot cost; enforces per-taka chronology. | `transferTaka()` in `takaInventory.ts` |
-| `split_taka_tx(p_business_id, p_parent_taka_id, p_splits, p_movement_date, p_notes, p_idempotency_key)` | `inventory.write` | Splits a taka roll (sum of child meters must equal parent `current_meters`), creates child takas (`parent_taka_id`), writes immutable `taka_splits` lineage, and appends balanced `SPLIT_OUT`/`SPLIT_IN` rows. | `splitTaka()` in `takaInventory.ts` |
-| `confirm_order_and_deduct_stock_tx(p_order_id, p_location_id, p_staff_name)` | `orders.confirm` | Confirms draft order, deducts **unreserved** stock (`sets - reserved_sets`), appends frozen-cost `DISPATCH` to `stock_ledger`, mirrors `stock_movements`, logs `audit_events`. | `confirmOrderAndDeductStock()` in `inventory.ts` |
-| `verify_inventory_integrity(p_business_id)` | Business Member | 3-way reconciliation: SET quantities, physical TAKA meters, and total inventory valuation vs. `stock_ledger`. | `verifyInventoryIntegrity()` in `takaInventory.ts` |
+### 3.1 Transactional Stock Mutation RPCs
 
-### Internal Inventory Helpers (Revoked from `PUBLIC`, `anon`, `authenticated`)
+| RPC | Auth & Tenancy Check | Permission | FY & Chronology Guards | Idempotency | Purpose & Wrapper |
+| :--- | :--- | :--- | :--- | :---: | :--- |
+| `intake_set_stock_v2(...)` | `auth.uid()`, `p_business_id = current_business_id()` | `inventory.write` | `assert_financial_year_open(p_movement_date)`, `assert_chronological_stock_date()` | Optional (`p_idempotency_key`) | MWAC SET intake + `stock_ledger` append + `stock_movements` mirror. Wrapper: `intakeSetStockV2()` in `takaInventory.ts`. |
+| `intake_stock_tx(...)` | `v_business_id = current_business_id()` (via `products`), delegates to `intake_set_stock_v2` | `inventory.write` | Open FY (`CURRENT_DATE`), `assert_chronological_stock_date()` (via delegation) | None (legacy) | Legacy-compatible SET intake; preserves existing `avg_unit_cost` instead of diluting MWAC with `0`. Wrapper: `intakeStock()` in `inventory.ts`. |
+| `transfer_stock_tx(...)` | `auth.uid()`, `v_business_id = current_business_id()` (via `products`) | `inventory.transfer` | `assert_financial_year_open(CURRENT_DATE)` (posts on `CURRENT_DATE`) | None (legacy) | Deadlock-free atomic SET transfer emitting 2 linked `stock_ledger` rows (`TRANSFER_OUT`/`TRANSFER_IN`) preserving source MWAC. Wrapper: `transferStock()` in `inventory.ts`. |
+| `receive_taka_lot_tx(...)` | `auth.uid()`, `p_business_id = current_business_id()`, validates active branch, product, variant, supplier party & location | `inventory.write` | `assert_financial_year_open(p_movement_date)`, `assert_chronological_stock_date()` | Optional (`p_idempotency_key`) | Atomically creates `inventory_lots`, serialized `inventory_takas`, and `stock_ledger` rows under one `transaction_group_id`. Wrapper: `receiveTakaLot()` in `takaInventory.ts`. |
+| `transfer_taka_tx(...)` | `auth.uid()`, `p_business_id = current_business_id()` | `inventory.transfer` | `assert_financial_year_open(p_movement_date)`, `assert_chronological_taka_date()` | Optional (`p_idempotency_key`) | Atomic taka transfer emitting 2 linked `stock_ledger` rows at exact lot cost. Wrapper: `transferTaka()` in `takaInventory.ts`. |
+| `split_taka_tx(...)` | `auth.uid()`, `p_business_id = current_business_id()` | `inventory.write` | `assert_financial_year_open(p_movement_date)`, `assert_chronological_taka_date()` | Optional (`p_idempotency_key`) | Splits a taka roll (child meters must equal parent `current_meters`), creates child takas (`parent_taka_id`), writes immutable `taka_splits` lineage, and appends balanced `SPLIT_OUT`/`SPLIT_IN` rows. Wrapper: `splitTaka()` in `takaInventory.ts`. |
+| `confirm_order_and_deduct_stock_tx(...)` | `auth.uid()`, `v_business_id = current_business_id()` (via `orders`) | `orders.confirm` | `assert_financial_year_open(CURRENT_DATE)`, `assert_chronological_stock_date()` | None (guarded by `status = 'draft'` lock) | Confirms draft order, deducts **unreserved** stock (`sets - reserved_sets`), appends frozen-cost `DISPATCH` to `stock_ledger`, mirrors `stock_movements`, logs `audit_events`. Wrapper: `confirmOrderAndDeductStock()` in `inventory.ts`. |
+
+### 3.2 Read-Only Reconciliation RPC
+
+| RPC | Volatility | Auth & Tenancy Check | FY / Chronology Guards | Purpose & Wrapper |
+| :--- | :---: | :--- | :---: | :--- |
+| `verify_inventory_integrity(p_business_id)` | `STABLE` (read-only) | `auth.uid() IS NOT NULL`, `p_business_id = current_business_id()`, `is_business_member(p_business_id)` | Not applicable (read-only audit across all posted rows) | 3-way reconciliation of SET quantities, physical TAKA meters, and total inventory valuation against `stock_ledger`. Wrapper: `verifyInventoryIntegrity()` in `takaInventory.ts`. |
+
+### 3.3 Internal Inventory Helpers (Revoked from `PUBLIC`, `anon`, `authenticated`)
 - `assert_chronological_stock_date(p_business_id, p_product_id, p_location_id, p_movement_date)`
 - `assert_chronological_taka_date(p_business_id, p_taka_id, p_movement_date)`
 
@@ -92,3 +99,4 @@ All Stage 2 RPCs enforce `auth.uid() IS NOT NULL`, `p_business_id = current_busi
 - **Stage 3 (Designed)**: `post_voucher_tx`, `reverse_voucher_tx`, `allocate_bill_payment_tx`, `verify_opening_balances`, `close_financial_year_tx`.
 - **Stage 4 (Designed)**: `confirm_sales_invoice_tx`, `confirm_purchase_bill_tx`, `confirm_sales_return_tx`, `confirm_purchase_return_tx`.
 - **Stage 5 (Planned)**: `issue_job_work_challan_tx`, `receive_job_work_tx`, `complete_production_run_tx`.
+

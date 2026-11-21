@@ -32,8 +32,9 @@ Thank you for contributing to **Kala ERP**. This guide covers local setup, engin
    - Never silently rewrite a migration that has already been merged to `main` or applied to a shared/staging database. Add a new sequential migration (`020_...sql`, etc.).
 2. **Never Bypass Transactional RPCs**:
    - Direct `INSERT`/`UPDATE`/`DELETE` on `inventory_stock`, `inventory_lots`, `inventory_takas`, `taka_splits`, `stock_ledger`, and `audit_events` is revoked at the database level. All state changes must flow through `SECURITY DEFINER` RPCs.
-3. **`SECURITY DEFINER` Contract**:
-   - Every privileged RPC must declare `SECURITY DEFINER`, pin `SET search_path = public, pg_temp`, revoke execution from `PUBLIC` and `anon`, verify `auth.uid() IS NOT NULL`, enforce `p_business_id = public.current_business_id()` (fail-closed multi-company context), and check `public.has_permission(p_business_id, '<perm>')`.
+3. **Function Security Contracts (See [`SECURITY_ARCHITECTURE.md`](SECURITY_ARCHITECTURE.md))**:
+   - **Privileged transactional RPCs** must declare `SECURITY DEFINER`, pin `SET search_path = public, pg_temp`, revoke execution from `PUBLIC` and `anon`, verify `auth.uid() IS NOT NULL`, enforce active company scope (`current_business_id()`), and check `public.has_permission(...)`.
+   - **Read-only/reconciliation functions**, **public gateway RPCs**, **internal helpers** (revoked from `PUBLIC, anon, authenticated`), and **triggers** follow their respective contracts documented in [`SECURITY_ARCHITECTURE.md`](SECURITY_ARCHITECTURE.md).
 4. **Preserve Backward Compatibility**:
    - Public QR URLs (`/:slug/p/:designNo`, `/p/:designNo`), buyer order requests (`submit_order_request`), order tracking (`/order/:orderNo`), and legacy `intake_stock_tx`/`transfer_stock_tx` paths must continue working across every ERP stage.
 5. **Never Commit Secrets**:
